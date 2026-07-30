@@ -38,6 +38,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Обозреватель файловой системы для выбора папки-источника (копирование/перемещение целых папок) -->
+        <activity
+            android:name=".FolderBrowserActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ShareCopy" />
+
         <!-- Экран-приёмник, который появляется в системном меню "Поделиться" -->
         <activity
             android:name=".ShareTargetActivity"

@@ -54,6 +54,9 @@ class MainActivity : AppCompatActivity() {
         findViewById<android.widget.Button>(R.id.btnAllFilesAccess).setOnClickListener {
             requestAllFilesAccess()
         }
+        findViewById<android.widget.Button>(R.id.btnCopyFolder).setOnClickListener {
+            startActivity(Intent(this, FolderBrowserActivity::class.java))
+        }
 
         refreshList()
     }

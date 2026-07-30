@@ -25,4 +25,16 @@
     <string name="error_no_destinations">Сначала добавьте папку назначения в приложении ShareCopy</string>
     <string name="error_root_unavailable">Root-доступ недоступен на этом устройстве</string>
     <string name="error_write_failed">Не удалось записать файл: %1$s</string>
+
+    <string name="btn_copy_folder">Скопировать/переместить папку</string>
+    <string name="folder_browser_title">Выбор папки-источника</string>
+    <string name="hint_jump_path">Путь (например /storage/emulated/0)</string>
+    <string name="btn_go">Перейти</string>
+    <string name="btn_up">▲ Вверх</string>
+    <string name="btn_select_this_folder">✓ Выбрать эту папку</string>
+    <string name="checkbox_browse_root">Читать через root (su) — для системных/защищённых папок</string>
+    <string name="folder_empty_or_no_access">Подпапок нет или нет доступа для чтения</string>
+    <string name="folder_copy_in_progress">Копирование папки…</string>
+    <string name="folder_copy_done_ok">Папка успешно скопирована/перемещена</string>
+    <string name="folder_copy_done_fail">Ошибка: %1$s</string>
 </resources>

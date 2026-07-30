@@ -50,6 +50,15 @@
         android:focusable="true"
         android:text="@string/btn_all_files_access" />
 
+    <Button
+        android:id="@+id/btnCopyFolder"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp"
+        android:layout_marginTop="8dp"
+        android:focusable="true"
+        android:text="@string/btn_copy_folder" />
+
     <TextView
         android:id="@+id/textEmpty"
         android:layout_width="match_parent"

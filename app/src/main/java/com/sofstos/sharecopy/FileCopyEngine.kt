@@ -6,12 +6,18 @@ import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
+import java.net.URLConnection
 
 data class CopyResult(
     val total: Int,
     val succeeded: Int,
     val notRemovedAfterMove: List<String>,
     val errors: List<String>
+)
+
+data class FolderCopyResult(
+    val success: Boolean,
+    val message: String
 )
 
 object FileCopyEngine {
@@ -118,6 +124,103 @@ object FileCopyEngine {
             i++
         }
         return candidate
+    }
+
+    /**
+     * Копирует или перемещает целую папку [sourcePath] (реальный путь в файловой системе)
+     * в [destination]. [sourceUseRoot] — нужен ли su для чтения источника (например, папка
+     * в защищённой области, недоступной обычному приложению).
+     */
+    fun runFolder(
+        context: Context,
+        sourcePath: String,
+        sourceUseRoot: Boolean,
+        destination: Destination,
+        move: Boolean
+    ): FolderCopyResult {
+        val srcFile = File(sourcePath.trimEnd('/'))
+        val srcName = srcFile.name.ifBlank { "folder_${System.currentTimeMillis()}" }
+
+        return try {
+            when (destination.type) {
+                DestType.MANUAL -> copyFolderManual(sourcePath.trimEnd('/'), srcName, destination, sourceUseRoot, move)
+                DestType.SAF -> copyFolderToSaf(context, srcFile, srcName, destination, sourceUseRoot, move)
+            }
+        } catch (e: Exception) {
+            FolderCopyResult(false, e.message ?: "Неизвестная ошибка")
+        }
+    }
+
+    private fun copyFolderManual(
+        sourcePath: String,
+        srcName: String,
+        destination: Destination,
+        sourceUseRoot: Boolean,
+        move: Boolean
+    ): FolderCopyResult {
+        val destBase = destination.path?.trimEnd('/') ?: return FolderCopyResult(false, "Не указан путь назначения")
+        val needsRoot = sourceUseRoot || destination.useRoot
+        val targetName = uniqueFolderNameShell(destBase, srcName, needsRoot)
+        val destFull = "$destBase/$targetName"
+
+        val ok = RootHelper.copyOrMoveTree(sourcePath, destFull, move, needsRoot)
+        return FolderCopyResult(
+            ok,
+            if (ok) "OK" else "Не удалось выполнить копирование (проверь права доступа / root)"
+        )
+    }
+
+    private fun uniqueFolderNameShell(destBase: String, name: String, useRoot: Boolean): String {
+        if (!RootHelper.pathExists("$destBase/$name", useRoot)) return name
+        var i = 1
+        while (RootHelper.pathExists("$destBase/$name ($i)", useRoot)) i++
+        return "$name ($i)"
+    }
+
+    private fun copyFolderToSaf(
+        context: Context,
+        srcRoot: File,
+        srcName: String,
+        destination: Destination,
+        sourceUseRoot: Boolean,
+        move: Boolean
+    ): FolderCopyResult {
+        if (sourceUseRoot) {
+            return FolderCopyResult(
+                false,
+                "Копирование в SAF-папку требует прямого чтения файлов, root-источник не поддерживается — выбери назначение с типом \"Путь вручную\""
+            )
+        }
+        if (!srcRoot.canRead()) {
+            return FolderCopyResult(false, "Нет прав на чтение исходной папки: ${srcRoot.path}")
+        }
+        val treeUri = Uri.parse(destination.treeUri ?: return FolderCopyResult(false, "Не указана SAF-папка"))
+        val treeDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return FolderCopyResult(false, "SAF-папка недоступна")
+        val uniqueName = uniqueSafName(treeDoc, srcName)
+        val destDir = treeDoc.createDirectory(uniqueName) ?: return FolderCopyResult(false, "Не удалось создать папку в SAF")
+
+        val ok = copyFileTreeToSaf(context, srcRoot, destDir)
+        if (ok && move) {
+            srcRoot.deleteRecursively()
+        }
+        return FolderCopyResult(ok, if (ok) "OK" else "Ошибка при копировании части файлов")
+    }
+
+    private fun copyFileTreeToSaf(context: Context, srcDir: File, destDoc: DocumentFile): Boolean {
+        val children = srcDir.listFiles() ?: return true
+        for (child in children) {
+            if (child.isDirectory) {
+                val sub = destDoc.createDirectory(child.name) ?: return false
+                if (!copyFileTreeToSaf(context, child, sub)) return false
+            } else {
+                val mime = URLConnection.guessContentTypeFromName(child.name) ?: "application/octet-stream"
+                val newFile = destDoc.createFile(mime, child.name) ?: return false
+                context.contentResolver.openOutputStream(newFile.uri)?.use { output ->
+                    child.inputStream().use { input -> input.copyTo(output, bufferSize = 64 * 1024) }
+                } ?: return false
+            }
+        }
+        return true
     }
 
     /** Пытаемся удалить исходный файл (для режима "переместить"). Часто невозможно из-за прав, выданных приложением-источником. */
