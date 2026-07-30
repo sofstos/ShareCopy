@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ShareCopy</string>
+    <string name="share_target_label">Скопировать в папку</string>
+
+    <string name="title_destinations">Папки назначения</string>
+    <string name="btn_add_saf">Добавить папку (через выбор)</string>
+    <string name="btn_add_manual">Добавить путь вручную</string>
+    <string name="btn_all_files_access">Разрешить доступ ко всем файлам</string>
+    <string name="empty_list">Список папок пуст. Добавьте хотя бы одну папку назначения.</string>
+
+    <string name="dialog_add_manual_title">Ручной путь к папке</string>
+    <string name="hint_name">Название (например: Загрузки с Telegram)</string>
+    <string name="hint_path">Полный путь, например /storage/emulated/0/ShareCopy</string>
+    <string name="checkbox_use_root">Использовать root (su) для записи</string>
+    <string name="btn_save">Сохранить</string>
+    <string name="btn_cancel">Отмена</string>
+    <string name="btn_delete">Удалить</string>
+
+    <string name="pick_destination_title">Куда скопировать?</string>
+    <string name="checkbox_move">Переместить (удалить исходники после копирования)</string>
+    <string name="copy_in_progress">Копирование…</string>
+    <string name="copy_done">Готово: скопировано %1$d из %2$d</string>
+    <string name="copy_move_warning">Не удалось удалить часть исходных файлов после копирования</string>
+    <string name="error_no_destinations">Сначала добавьте папку назначения в приложении ShareCopy</string>
+    <string name="error_root_unavailable">Root-доступ недоступен на этом устройстве</string>
+    <string name="error_write_failed">Не удалось записать файл: %1$s</string>
+</resources>
