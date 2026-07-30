@@ -89,6 +89,17 @@ object RootHelper {
         }
     }
 
+    /** Проверяет, является ли [path] существующей папкой. */
+    fun isDirectory(path: String, useRoot: Boolean): Boolean {
+        return try {
+            val p = escape(path)
+            val process = shell("test -d '$p'", useRoot)
+            process.waitFor() == 0
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     /** Проверяет существование пути [path] (файл или папка). */
     fun pathExists(path: String, useRoot: Boolean): Boolean {
         return try {

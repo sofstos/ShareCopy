@@ -37,4 +37,11 @@
     <string name="folder_copy_in_progress">Копирование папки…</string>
     <string name="folder_copy_done_ok">Папка успешно скопирована/перемещена</string>
     <string name="folder_copy_done_fail">Ошибка: %1$s</string>
+
+    <string name="checkbox_subfolder_by_app">В подпапку «%1$s»</string>
+    <string name="unknown_app">Неизвестно</string>
+    <string name="folder_path_detected_title">Обнаружен путь к папке</string>
+    <string name="folder_path_detected_message">Похоже на путь к папке:\n%1$s\n\nСкопировать/переместить всю папку?</string>
+    <string name="btn_yes_folder">Да, это папка</string>
+    <string name="btn_no_as_text">Нет, сохранить как текст</string>
 </resources>

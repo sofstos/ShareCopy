@@ -110,6 +110,7 @@ class FolderBrowserActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.activity_share_target, null)
         val destRecycler = view.findViewById<RecyclerView>(R.id.recyclerDestinations)
         val checkMove = view.findViewById<CheckBox>(R.id.checkMove)
+        view.findViewById<CheckBox>(R.id.checkSubfolder).visibility = View.GONE
         destRecycler.layoutManager = LinearLayoutManager(this)
         checkMove.isChecked = store.getLastMoveFlag()
 

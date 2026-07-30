@@ -26,7 +26,8 @@ object FileCopyEngine {
         context: Context,
         sources: List<Uri>,
         destination: Destination,
-        move: Boolean
+        move: Boolean,
+        subfolderName: String? = null
     ): CopyResult {
         var succeeded = 0
         val notRemoved = mutableListOf<String>()
@@ -36,8 +37,8 @@ object FileCopyEngine {
             val displayName = queryDisplayName(context, uri) ?: "file_${System.currentTimeMillis()}"
             try {
                 val ok = when (destination.type) {
-                    DestType.SAF -> writeToSaf(context, uri, destination, displayName)
-                    DestType.MANUAL -> writeToManual(context, uri, destination, displayName)
+                    DestType.SAF -> writeToSaf(context, uri, destination, displayName, subfolderName)
+                    DestType.MANUAL -> writeToManual(context, uri, destination, displayName, subfolderName)
                 }
                 if (ok) {
                     succeeded++
@@ -67,9 +68,14 @@ object FileCopyEngine {
         }
     }
 
-    private fun writeToSaf(context: Context, source: Uri, destination: Destination, name: String): Boolean {
+    private fun writeToSaf(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
         val treeUri = Uri.parse(destination.treeUri ?: return false)
-        val treeDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+        var treeDoc = DocumentFile.fromTreeUri(context, treeUri) ?: return false
+        if (!subfolderName.isNullOrBlank()) {
+            treeDoc = (treeDoc.findFile(subfolderName)?.takeIf { it.isDirectory }
+                ?: treeDoc.createDirectory(subfolderName))
+                ?: return false
+        }
         val mime = context.contentResolver.getType(source) ?: "application/octet-stream"
         val uniqueName = uniqueSafName(treeDoc, name)
         val newFile = treeDoc.createFile(mime, uniqueName) ?: return false
@@ -91,8 +97,12 @@ object FileCopyEngine {
         return "$base ($i)$ext"
     }
 
-    private fun writeToManual(context: Context, source: Uri, destination: Destination, name: String): Boolean {
-        val basePath = destination.path ?: return false
+    private fun writeToManual(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
+        val baseRaw = destination.path ?: return false
+        val basePath = if (!subfolderName.isNullOrBlank())
+            baseRaw.trimEnd('/') + "/" + sanitizeName(subfolderName)
+        else
+            baseRaw
         val uniqueName = uniqueManualName(basePath, name, destination.useRoot)
         val fullPath = basePath.trimEnd('/') + "/" + uniqueName
 
@@ -110,6 +120,12 @@ object FileCopyEngine {
             } ?: return false
             return outFile.exists() && outFile.length() > 0
         }
+    }
+
+    /** Убирает символы, недопустимые в именах файлов/папок на большинстве файловых систем Android. */
+    fun sanitizeName(raw: String): String {
+        val cleaned = raw.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim()
+        return cleaned.ifBlank { "unknown" }
     }
 
     private fun uniqueManualName(basePath: String, name: String, useRoot: Boolean): String {
