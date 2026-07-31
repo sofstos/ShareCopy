@@ -26,12 +26,83 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Cache librclone.aar
+        id: cache-librclone
+        uses: actions/cache@v4
+        with:
+          path: app/libs/librclone.aar
+          key: librclone-aar-v1
+
+      - name: Build librclone.aar (Go + gomobile + NDK) — diagnostic stage, не ломает основную сборку
+        if: steps.cache-librclone.outputs.cache-hit != 'true'
+        id: librclone
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          {
+            echo "=== Installing Android NDK ==="
+            yes | sdkmanager --licenses > /dev/null 2>&1 || true
+            sdkmanager --install "ndk;26.1.10909125"
+            export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/26.1.10909125"
+            echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
+
+            echo "=== Installing gomobile/gobind ==="
+            go install golang.org/x/mobile/cmd/gomobile@latest
+            go install golang.org/x/mobile/cmd/gobind@latest
+            export PATH="$PATH:$(go env GOPATH)/bin"
+            gomobile init
+
+            echo "=== Fetching rclone module ==="
+            mkdir -p /tmp/rclone-build && cd /tmp/rclone-build
+            go mod init tmprclonebuild
+            go get github.com/rclone/rclone@latest
+
+            echo "=== Building librclone.aar (arm64 + arm only, чтобы не раздувать время сборки и размер) ==="
+            mkdir -p "$GITHUB_WORKSPACE/app/libs"
+            gomobile bind -v -target=android/arm64,android/arm -androidapi 30 \
+              -javapkg=org.rclone \
+              -o "$GITHUB_WORKSPACE/app/libs/librclone.aar" \
+              github.com/rclone/rclone/librclone/gomobile
+          } 2>&1 | tee /tmp/librclone_build.log
+
+      - name: Dump librclone.aar Java/Kotlin API (диагностика для следующего шага интеграции)
+        if: always()
+        run: |
+          set -o pipefail
+          {
+            echo "=== librclone.aar exists? ==="
+            ls -la app/libs/librclone.aar 2>&1 || echo "NOT FOUND"
+            if [ -f app/libs/librclone.aar ]; then
+              echo "=== Archive contents ==="
+              unzip -l app/libs/librclone.aar || true
+              echo "=== Extracting classes.jar and dumping public API ==="
+              rm -rf /tmp/aar_extract && mkdir -p /tmp/aar_extract
+              unzip -o app/libs/librclone.aar -d /tmp/aar_extract > /dev/null
+              CLASSES_JAR=$(find /tmp/aar_extract -name "classes.jar" | head -1)
+              echo "classes.jar path: $CLASSES_JAR"
+              if [ -n "$CLASSES_JAR" ]; then
+                echo "=== All class names containing 'rclone' or 'Gomobile' ==="
+                unzip -l "$CLASSES_JAR" | grep -i -E "rclone|gomobile" || true
+                echo "=== javap dump of likely main class ==="
+                for CLS in org.rclone.gomobile.Gomobile org.rclone.Gomobile; do
+                  echo "--- trying $CLS ---"
+                  javap -p -classpath "$CLASSES_JAR" "$CLS" 2>&1 || true
+                done
+              fi
+            fi
+          } 2>&1 | tee -a /tmp/librclone_build.log
+
       - name: Build debug APK
         id: build
         continue-on-error: true
         run: |
           set -o pipefail
-          gradle assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
+          { cat /tmp/librclone_build.log 2>/dev/null; echo "=== GRADLE BUILD ==="; gradle assembleDebug --no-daemon; } 2>&1 | tee /tmp/build.log
 
       - name: Publish result (APK and/or build log) to apk-output branch
         if: always()
