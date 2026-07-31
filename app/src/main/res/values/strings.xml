@@ -44,4 +44,9 @@
     <string name="folder_path_detected_message">Похоже на путь к папке:\n%1$s\n\nСкопировать/переместить всю папку?</string>
     <string name="btn_yes_folder">Да, это папка</string>
     <string name="btn_no_as_text">Нет, сохранить как текст</string>
+
+    <string name="btn_menu">Меню</string>
+    <string name="internal_storage">Внутренняя память</string>
+    <string name="dialog_edit_title">Изменить папку назначения</string>
+    <string name="btn_change_saf_folder">Изменить папку (SAF)</string>
 </resources>

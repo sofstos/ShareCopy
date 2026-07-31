@@ -6,56 +6,43 @@
     android:background="@color/bg"
     android:paddingTop="24dp">
 
-    <TextView
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="20dp"
-        android:text="@string/title_destinations"
-        android:textColor="@color/text_primary"
-        android:textSize="22sp"
-        android:textStyle="bold" />
-
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:paddingHorizontal="12dp"
-        android:paddingTop="12dp">
+        android:gravity="center_vertical"
+        android:paddingHorizontal="20dp">
 
-        <Button
-            android:id="@+id/btnAddSaf"
+        <TextView
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:layout_margin="4dp"
-            android:focusable="true"
-            android:text="@string/btn_add_saf" />
+            android:text="@string/title_destinations"
+            android:textColor="@color/text_primary"
+            android:textSize="22sp"
+            android:textStyle="bold" />
 
-        <Button
-            android:id="@+id/btnAddManual"
-            android:layout_width="0dp"
+        <TextView
+            android:id="@+id/btnMenu"
+            android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:layout_margin="4dp"
+            android:background="@drawable/focusable_row_bg"
+            android:paddingHorizontal="16dp"
+            android:paddingVertical="10dp"
             android:focusable="true"
-            android:text="@string/btn_add_manual" />
+            android:clickable="true"
+            android:contentDescription="@string/btn_menu"
+            android:text="☰"
+            android:textColor="@color/text_primary"
+            android:textSize="20sp" />
     </LinearLayout>
-
-    <Button
-        android:id="@+id/btnAllFilesAccess"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="4dp"
-        android:focusable="true"
-        android:text="@string/btn_all_files_access" />
 
     <Button
         android:id="@+id/btnCopyFolder"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp"
-        android:layout_marginTop="8dp"
+        android:layout_marginTop="16dp"
         android:focusable="true"
         android:text="@string/btn_copy_folder" />
 

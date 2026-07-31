@@ -29,6 +29,17 @@ class SettingsStore(context: Context) {
         saveDestinations(list)
     }
 
+    fun updateDestination(updated: Destination) {
+        val list = getDestinations()
+        val idx = list.indexOfFirst { it.id == updated.id }
+        if (idx >= 0) {
+            list[idx] = updated
+        } else {
+            list.add(updated)
+        }
+        saveDestinations(list)
+    }
+
     fun removeDestination(id: String) {
         val list = getDestinations()
         list.removeAll { it.id == id }

@@ -1,5 +1,8 @@
 package com.sofstos.sharecopy
 
+import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -29,7 +32,7 @@ class DestinationAdapter(
         val item = items[position]
         holder.title.text = item.name
         holder.subtitle.text = when (item.type) {
-            DestType.SAF -> "SAF"
+            DestType.SAF -> "SAF: " + safDisplayPath(holder.itemView.context, item.treeUri)
             DestType.MANUAL -> if (item.useRoot) "Путь вручную (root): ${item.path}" else "Путь вручную: ${item.path}"
         }
         holder.itemView.setOnClickListener { onClick(item) }
@@ -44,5 +47,25 @@ class DestinationAdapter(
         items.clear()
         items.addAll(newItems)
         notifyDataSetChanged()
+    }
+
+    companion object {
+        /** Превращает content:// tree URI в примерный человекочитаемый путь ("Внутренняя память/Download/Foo"). */
+        fun safDisplayPath(context: Context, treeUriString: String?): String {
+            if (treeUriString.isNullOrBlank()) return "?"
+            return try {
+                val uri = Uri.parse(treeUriString)
+                val docId = DocumentsContract.getTreeDocumentId(uri)
+                val parts = docId.split(":", limit = 2)
+                val volume = when (parts.getOrNull(0)) {
+                    "primary" -> context.getString(R.string.internal_storage)
+                    else -> parts.getOrNull(0) ?: ""
+                }
+                val relPath = parts.getOrNull(1)?.trim('/') ?: ""
+                if (relPath.isBlank()) "/$volume" else "$volume/$relPath"
+            } catch (e: Exception) {
+                treeUriString
+            }
+        }
     }
 }

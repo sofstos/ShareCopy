@@ -11,6 +11,11 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="29" />
 
+    <!-- Без этого Android 11+ фильтрует Activity#getReferrer() правилами видимости пакетов,
+         и приложение не может узнать, кто именно поделился текстом/файлом (см. AOSP bug 191954233) -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
+        tools:ignore="QueryAllPackagesPermission" />
+
     <!-- Приложение не требует сенсорного экрана и лидбэк-навигации — разрешаем установку на TV-приставки -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />

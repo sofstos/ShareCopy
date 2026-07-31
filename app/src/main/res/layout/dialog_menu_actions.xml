@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="300dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/surface"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/menuItemAddSaf"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/btn_add_saf"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/menuItemAddManual"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/btn_add_manual"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/menuItemAllFilesAccess"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/btn_all_files_access"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+</LinearLayout>
