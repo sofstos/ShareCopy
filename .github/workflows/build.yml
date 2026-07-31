@@ -61,6 +61,8 @@ jobs:
             mkdir -p /tmp/rclone-build && cd /tmp/rclone-build
             go mod init tmprclonebuild
             go get github.com/rclone/rclone@latest
+            go get -tool golang.org/x/mobile/cmd/gobind
+            go get -tool golang.org/x/mobile/cmd/gomobile
 
             echo "=== Building librclone.aar (arm64 + arm only, чтобы не раздувать время сборки и размер) ==="
             mkdir -p "$GITHUB_WORKSPACE/app/libs"
