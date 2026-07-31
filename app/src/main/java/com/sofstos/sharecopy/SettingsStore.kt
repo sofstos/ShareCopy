@@ -50,8 +50,25 @@ class SettingsStore(context: Context) {
     fun getLastMoveFlag(): Boolean = prefs.getBoolean(KEY_LAST_MOVE, false)
     fun setLastMoveFlag(value: Boolean) = prefs.edit().putBoolean(KEY_LAST_MOVE, value).apply()
 
+    // Вибрация по результату копирования/перемещения
+    fun isVibrationEnabled(): Boolean = prefs.getBoolean(KEY_VIBRATION, true)
+    fun setVibrationEnabled(value: Boolean) = prefs.edit().putBoolean(KEY_VIBRATION, value).apply()
+
+    // Фиксированный файловый менеджер для пункта "Открыть в фиксированном ФМ"
+    fun getFixedFileManagerPackage(): String? = prefs.getString(KEY_FIXED_FM_PKG, null)
+    fun getFixedFileManagerLabel(): String? = prefs.getString(KEY_FIXED_FM_LABEL, null)
+    fun setFixedFileManager(packageName: String?, label: String?) {
+        prefs.edit()
+            .putString(KEY_FIXED_FM_PKG, packageName)
+            .putString(KEY_FIXED_FM_LABEL, label)
+            .apply()
+    }
+
     companion object {
         private const val KEY_DESTINATIONS = "destinations"
         private const val KEY_LAST_MOVE = "last_move_flag"
+        private const val KEY_VIBRATION = "vibration_enabled"
+        private const val KEY_FIXED_FM_PKG = "fixed_fm_package"
+        private const val KEY_FIXED_FM_LABEL = "fixed_fm_label"
     }
 }

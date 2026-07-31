@@ -132,6 +132,7 @@ class FolderBrowserActivity : AppCompatActivity() {
     private fun runFolderCopy(sourcePath: String, dest: Destination, move: Boolean) {
         isBusy = true
         val sourceUseRoot = checkBrowseRoot.isChecked
+        val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
         Toast.makeText(this, R.string.folder_copy_in_progress, Toast.LENGTH_SHORT).show()
 
         Thread {
@@ -139,14 +140,16 @@ class FolderBrowserActivity : AppCompatActivity() {
             runOnUiThread {
                 isBusy = false
                 if (result.success) {
-                    Toast.makeText(this, R.string.folder_copy_done_ok, Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, getString(R.string.folder_result_ok, opWord, dest.name), Toast.LENGTH_LONG).show()
+                    VibrationHelper.success(this)
                     finish()
                 } else {
                     Toast.makeText(
                         this,
-                        getString(R.string.folder_copy_done_fail, result.message),
+                        getString(R.string.folder_result_fail, opWord, result.message),
                         Toast.LENGTH_LONG
                     ).show()
+                    VibrationHelper.error(this)
                 }
             }
         }.start()

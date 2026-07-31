@@ -59,7 +59,7 @@ class MainActivity : AppCompatActivity() {
         adapter = DestinationAdapter(
             store.getDestinations(),
             onClick = { dest -> editDestination(dest) },
-            onLongClick = { dest -> confirmDelete(dest); true }
+            onLongClick = { dest -> showDestinationActionsMenu(dest); true }
         )
         recycler.adapter = adapter
 
@@ -91,6 +91,14 @@ class MainActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.dialog_menu_actions, null)
         val dialog = AlertDialog.Builder(this).setView(view).create()
 
+        val menuFm = view.findViewById<TextView>(R.id.menuItemPickFileManager)
+        val currentFmLabel = store.getFixedFileManagerLabel() ?: getString(R.string.fixed_fm_not_set)
+        menuFm.text = getString(R.string.menu_pick_file_manager) + ": " + currentFmLabel
+
+        val checkVibration = view.findViewById<CheckBox>(R.id.menuCheckVibration)
+        checkVibration.isChecked = store.isVibrationEnabled()
+        checkVibration.setOnCheckedChangeListener { _, checked -> store.setVibrationEnabled(checked) }
+
         view.findViewById<TextView>(R.id.menuItemAddSaf).setOnClickListener {
             dialog.dismiss()
             safPickerLauncher.launch(null)
@@ -110,6 +118,10 @@ class MainActivity : AppCompatActivity() {
         view.findViewById<TextView>(R.id.menuItemUsageAccess).setOnClickListener {
             dialog.dismiss()
             requestUsageAccess()
+        }
+        menuFm.setOnClickListener {
+            dialog.dismiss()
+            showFileManagerPickerDialog()
         }
 
         dialog.show()
@@ -296,6 +308,76 @@ class MainActivity : AppCompatActivity() {
             }
         }
         dialog.show()
+    }
+
+    private fun showDestinationActionsMenu(dest: Destination) {
+        val view = layoutInflater.inflate(R.layout.dialog_destination_actions, null)
+        val dialog = AlertDialog.Builder(this).setTitle(dest.name).setView(view).create()
+
+        view.findViewById<TextView>(R.id.actionOpenSystem).setOnClickListener {
+            dialog.dismiss()
+            openInSystem(dest)
+        }
+        view.findViewById<TextView>(R.id.actionOpenFixedFm).setOnClickListener {
+            dialog.dismiss()
+            openInFixedFileManager(dest)
+        }
+        view.findViewById<TextView>(R.id.actionDelete).setOnClickListener {
+            dialog.dismiss()
+            confirmDelete(dest)
+        }
+
+        dialog.show()
+    }
+
+    private fun openInSystem(dest: Destination) {
+        val intent = FolderOpenHelper.buildOpenFolderIntent(this, dest)
+        if (intent == null) {
+            Toast.makeText(this, getString(R.string.error_open_folder_failed, dest.name), Toast.LENGTH_LONG).show()
+            return
+        }
+        try {
+            startActivity(Intent.createChooser(intent, dest.name))
+        } catch (e: Exception) {
+            Toast.makeText(this, getString(R.string.error_open_folder_failed, e.message ?: ""), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun openInFixedFileManager(dest: Destination) {
+        val pkg = store.getFixedFileManagerPackage()
+        if (pkg.isNullOrBlank()) {
+            Toast.makeText(this, R.string.error_fixed_fm_not_set, Toast.LENGTH_LONG).show()
+            return
+        }
+        val intent = FolderOpenHelper.buildOpenFolderIntent(this, dest)
+        if (intent == null) {
+            Toast.makeText(this, getString(R.string.error_open_folder_failed, dest.name), Toast.LENGTH_LONG).show()
+            return
+        }
+        intent.setPackage(pkg)
+        try {
+            startActivity(intent)
+        } catch (e: Exception) {
+            Toast.makeText(this, getString(R.string.error_open_folder_failed, e.message ?: ""), Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun showFileManagerPickerDialog() {
+        val candidates = FolderOpenHelper.listFileManagerCandidates(this)
+        if (candidates.isEmpty()) {
+            Toast.makeText(this, R.string.fixed_fm_none_found, Toast.LENGTH_LONG).show()
+            return
+        }
+        val labels = candidates.map { it.second }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_pick_file_manager_title)
+            .setItems(labels) { _, which ->
+                val (pkg, label) = candidates[which]
+                store.setFixedFileManager(pkg, label)
+                Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
     }
 
     private fun confirmDelete(dest: Destination) {

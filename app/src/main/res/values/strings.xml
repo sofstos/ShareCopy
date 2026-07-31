@@ -62,4 +62,24 @@
     <string name="sftp_test_ok">Соединение успешно</string>
 
     <string name="btn_usage_access">Доступ к использованию (для подписи скриншотов)</string>
+
+    <string name="op_copy">Копирование</string>
+    <string name="op_move">Перемещение</string>
+    <string name="copy_result_ok">%1$s завершено: %2$d из %3$d → «%4$s»</string>
+    <string name="copy_result_fail_all">%1$s не удалось: 0 из %2$d → «%3$s»</string>
+    <string name="copy_result_partial">%1$s: %2$d из %3$d успешно (остальные с ошибкой) → «%4$s»</string>
+    <string name="folder_result_ok">%1$s папки завершено → «%2$s»</string>
+    <string name="folder_result_fail">%1$s папки не удалось: %2$s</string>
+
+    <string name="menu_toggle_vibration">Вибрация при результате</string>
+    <string name="menu_pick_file_manager">Фиксированный файловый менеджер</string>
+    <string name="fixed_fm_not_set">не выбран</string>
+    <string name="dialog_pick_file_manager_title">Выбери файловый менеджер</string>
+    <string name="fixed_fm_none_found">Не найдено ни одного файлового менеджера, поддерживающего открытие папок</string>
+
+    <string name="dest_action_open_system">Открыть в системе</string>
+    <string name="dest_action_open_fixed_fm">Открыть в фиксированном ФМ</string>
+    <string name="dest_action_delete">Удалить</string>
+    <string name="error_open_folder_failed">Не удалось открыть папку: %1$s</string>
+    <string name="error_fixed_fm_not_set">Сначала выбери фиксированный файловый менеджер в меню ☰</string>
 </resources>

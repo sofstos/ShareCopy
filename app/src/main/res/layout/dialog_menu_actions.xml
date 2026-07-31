@@ -76,4 +76,29 @@
         android:textColor="@color/text_primary"
         android:textSize="15sp" />
 
+    <TextView
+        android:id="@+id/menuItemPickFileManager"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <CheckBox
+        android:id="@+id/menuCheckVibration"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:text="@string/menu_toggle_vibration"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
 </LinearLayout>

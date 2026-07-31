@@ -24,6 +24,8 @@
     <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
+    <uses-permission android:name="android.permission.VIBRATE" />
+
     <!-- Приложение не требует сенсорного экрана и лидбэк-навигации — разрешаем установку на TV-приставки -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />

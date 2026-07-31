@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="300dp"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:background="@color/surface"
+    android:padding="8dp">
+
+    <TextView
+        android:id="@+id/actionOpenSystem"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/dest_action_open_system"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/actionOpenFixedFm"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/dest_action_open_fixed_fm"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <TextView
+        android:id="@+id/actionDelete"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/dest_action_delete"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+</LinearLayout>

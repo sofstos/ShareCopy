@@ -226,6 +226,7 @@ class ShareTargetActivity : AppCompatActivity() {
     private fun startCopy(dest: Destination, move: Boolean) {
         isRunning = true
         textStatus.visibility = View.VISIBLE
+        val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
 
         val path = folderPath
         if (path != null) {
@@ -233,12 +234,12 @@ class ShareTargetActivity : AppCompatActivity() {
             Thread {
                 val result = FileCopyEngine.runFolder(applicationContext, path, folderUseRoot, dest, move)
                 runOnUiThread {
-                    Toast.makeText(
-                        this,
-                        if (result.success) getString(R.string.folder_copy_done_ok)
-                        else getString(R.string.folder_copy_done_fail, result.message),
-                        Toast.LENGTH_LONG
-                    ).show()
+                    val msg = if (result.success)
+                        getString(R.string.folder_result_ok, opWord, dest.name)
+                    else
+                        getString(R.string.folder_result_fail, opWord, result.message)
+                    Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                    if (result.success) VibrationHelper.success(this) else VibrationHelper.error(this)
                     finish()
                 }
             }.start()
@@ -252,8 +253,13 @@ class ShareTargetActivity : AppCompatActivity() {
         Thread {
             val result = FileCopyEngine.run(applicationContext, fileSources, dest, move, subfolder)
             runOnUiThread {
-                val msg = getString(R.string.copy_done, result.succeeded, result.total)
+                val msg = when {
+                    result.succeeded == result.total -> getString(R.string.copy_result_ok, opWord, result.succeeded, result.total, dest.name)
+                    result.succeeded == 0 -> getString(R.string.copy_result_fail_all, opWord, result.total, dest.name)
+                    else -> getString(R.string.copy_result_partial, opWord, result.succeeded, result.total, dest.name)
+                }
                 Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+                if (result.succeeded == result.total) VibrationHelper.success(this) else VibrationHelper.error(this)
                 if (result.notRemovedAfterMove.isNotEmpty()) {
                     Toast.makeText(this, R.string.copy_move_warning, Toast.LENGTH_LONG).show()
                 }
