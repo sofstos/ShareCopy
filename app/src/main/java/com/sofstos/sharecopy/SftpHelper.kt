@@ -20,11 +20,11 @@ object SftpHelper {
 
     /**
      * curve25519-sha256 (современный алгоритм обмена ключами, который часто предлагает свежий
-     * OpenSSH) через связку sshj+BouncyCastle на Android иногда падает с ошибкой вида
-     * "no such algorithm: X25519 for provider BC" — несовпадение версий регистрации алгоритма.
+     * OpenSSH) требует поддержки X25519 на уровне JCE-провайдера, которой на Android нет
+     * гарантированно и стабильно (в т.ч. конфликтует с внешним BouncyCastle — см. ShareCopyApp).
      * Исключаем его из предложения: остаются ECDH (nistp256/384/521) и group-exchange-sha256,
      * которые современный OpenSSH тоже предлагает и которые работают через встроенную
-     * Android-криптографию без BC.
+     * Android-криптографию (Conscrypt) без конфликтов.
      */
     private fun buildConfig(): DefaultConfig {
         val config = DefaultConfig()
