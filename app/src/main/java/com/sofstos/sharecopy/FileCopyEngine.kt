@@ -7,6 +7,9 @@ import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.io.FileOutputStream
 import java.net.URLConnection
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 data class CopyResult(
     val total: Int,
@@ -34,7 +37,8 @@ object FileCopyEngine {
         val errors = mutableListOf<String>()
 
         for (uri in sources) {
-            val displayName = queryDisplayName(context, uri) ?: "file_${System.currentTimeMillis()}"
+            var displayName = queryDisplayName(context, uri) ?: "file_${System.currentTimeMillis()}"
+            displayName = maybeRenameScreenshot(context, uri, displayName)
             try {
                 val ok = when (destination.type) {
                     DestType.SAF -> writeToSaf(context, uri, destination, displayName, subfolderName)
@@ -56,6 +60,26 @@ object FileCopyEngine {
         }
 
         return CopyResult(sources.size, succeeded, notRemoved, errors)
+    }
+
+    /**
+     * Если [uri] похож на скриншот — пытается определить, какое приложение было на переднем
+     * плане в момент его создания (через ScreenshotHelper, без фонового сервиса), и переименовать
+     * файл в формате "ИмяПриложения_YYYY-MM-DD_hh-mm-ss.ext". Если определить не удалось —
+     * возвращает исходное имя без изменений.
+     */
+    private fun maybeRenameScreenshot(context: Context, uri: Uri, originalName: String): String {
+        val looksLikeScreenshot = ScreenshotHelper.isScreenshotUri(context, originalName) ||
+            ScreenshotHelper.isInScreenshotsFolder(context, uri)
+        if (!looksLikeScreenshot) return originalName
+
+        val ts = ScreenshotHelper.getFileTimestampMs(context, uri) ?: return originalName
+        val appLabel = ScreenshotHelper.resolveForegroundAppLabelAt(context, ts) ?: return originalName
+
+        val dot = originalName.lastIndexOf('.')
+        val ext = if (dot > 0) originalName.substring(dot + 1) else "png"
+        val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US).format(Date(ts))
+        return "${sanitizeName(appLabel)}_$stamp.$ext"
     }
 
     private fun queryDisplayName(context: Context, uri: Uri): String? {

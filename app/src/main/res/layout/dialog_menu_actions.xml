@@ -62,4 +62,18 @@
         android:textColor="@color/text_primary"
         android:textSize="15sp" />
 
+    <TextView
+        android:id="@+id/menuItemUsageAccess"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/btn_usage_access"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
 </LinearLayout>

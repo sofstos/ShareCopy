@@ -107,6 +107,10 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
             requestAllFilesAccess()
         }
+        view.findViewById<TextView>(R.id.menuItemUsageAccess).setOnClickListener {
+            dialog.dismiss()
+            requestUsageAccess()
+        }
 
         dialog.show()
     }
@@ -303,6 +307,20 @@ class MainActivity : AppCompatActivity() {
             }
             .setNegativeButton(R.string.btn_cancel, null)
             .show()
+    }
+
+    private fun requestUsageAccess() {
+        try {
+            val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+            intent.data = Uri.parse("package:$packageName")
+            startActivity(intent)
+        } catch (e: Exception) {
+            try {
+                startActivity(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            } catch (e2: Exception) {
+                Toast.makeText(this, e2.message ?: "?", Toast.LENGTH_LONG).show()
+            }
+        }
     }
 
     private fun requestAllFilesAccess() {

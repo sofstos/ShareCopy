@@ -60,4 +60,6 @@
     <string name="sftp_testing">Проверка соединения…</string>
     <string name="sftp_test_failed">Не удалось подключиться: %1$s</string>
     <string name="sftp_test_ok">Соединение успешно</string>
+
+    <string name="btn_usage_access">Доступ к использованию (для подписи скриншотов)</string>
 </resources>
