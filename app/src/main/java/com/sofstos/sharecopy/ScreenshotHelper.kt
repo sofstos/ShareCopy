@@ -68,6 +68,11 @@ object ScreenshotHelper {
         }
     }
 
+    /** Пакеты, которые никогда не считаются "содержимым" скриншота — сама наша активность и системный UI захвата скриншота. */
+    private fun isExcludedPackage(context: Context, pkg: String): Boolean {
+        return pkg == context.packageName || pkg == "com.android.systemui"
+    }
+
     /**
      * Определяет название приложения, которое было на переднем плане непосредственно
      * перед [timestampMs] (то есть — какое приложение было видно на скриншоте).
@@ -85,7 +90,7 @@ object ScreenshotHelper {
                 events.getNextEvent(event)
                 val isForegroundEvent = event.eventType == UsageEvents.Event.MOVE_TO_FOREGROUND ||
                     (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && event.eventType == UsageEvents.Event.ACTIVITY_RESUMED)
-                if (isForegroundEvent && event.packageName != context.packageName) {
+                if (isForegroundEvent && !isExcludedPackage(context, event.packageName)) {
                     lastPackage = event.packageName
                 }
             }

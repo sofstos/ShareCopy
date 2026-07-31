@@ -1,5 +1,6 @@
 package com.sofstos.sharecopy
 
+import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
 import net.schmizz.sshj.sftp.OpenMode
 import net.schmizz.sshj.sftp.SFTPClient
@@ -17,8 +18,24 @@ object SftpHelper {
 
     data class SftpResult(val success: Boolean, val message: String)
 
+    /**
+     * curve25519-sha256 (современный алгоритм обмена ключами, который часто предлагает свежий
+     * OpenSSH) через связку sshj+BouncyCastle на Android иногда падает с ошибкой вида
+     * "no such algorithm: X25519 for provider BC" — несовпадение версий регистрации алгоритма.
+     * Исключаем его из предложения: остаются ECDH (nistp256/384/521) и group-exchange-sha256,
+     * которые современный OpenSSH тоже предлагает и которые работают через встроенную
+     * Android-криптографию без BC.
+     */
+    private fun buildConfig(): DefaultConfig {
+        val config = DefaultConfig()
+        config.keyExchangeFactories = config.keyExchangeFactories.filterNot {
+            it.name.contains("curve25519", ignoreCase = true)
+        }
+        return config
+    }
+
     private fun connect(host: String, port: Int, user: String, password: String): SSHClient {
-        val ssh = SSHClient()
+        val ssh = SSHClient(buildConfig())
         ssh.addHostKeyVerifier(PromiscuousVerifier())
         ssh.connectTimeout = 8000
         ssh.timeout = 15000
