@@ -19,20 +19,12 @@ object SftpHelper {
     data class SftpResult(val success: Boolean, val message: String)
 
     /**
-     * curve25519-sha256 (современный алгоритм обмена ключами, который часто предлагает свежий
-     * OpenSSH) требует поддержки X25519 на уровне JCE-провайдера, которой на Android нет
-     * гарантированно и стабильно (в т.ч. конфликтует с внешним BouncyCastle — см. ShareCopyApp).
-     * Исключаем его из предложения: остаются ECDH (nistp256/384/521) и group-exchange-sha256,
-     * которые современный OpenSSH тоже предлагает и которые работают через встроенную
-     * Android-криптографию (Conscrypt) без конфликтов.
+     * Раньше здесь исключался curve25519-sha256 из-за конфликта с системным BC-огрызком
+     * Android. Теперь ShareCopyApp явно заменяет системный "BC" на полноценный BouncyCastle,
+     * поэтому используем стандартный набор алгоритмов sshj целиком — так шире совместимость
+     * с разными серверами (в т.ч. более старыми).
      */
-    private fun buildConfig(): DefaultConfig {
-        val config = DefaultConfig()
-        config.keyExchangeFactories = config.keyExchangeFactories.filterNot {
-            it.name.contains("curve25519", ignoreCase = true)
-        }
-        return config
-    }
+    private fun buildConfig(): DefaultConfig = DefaultConfig()
 
     private fun connect(host: String, port: Int, user: String, password: String): SSHClient {
         val ssh = SSHClient(buildConfig())
