@@ -27,23 +27,31 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
 
       - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: ShareCopy-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Publish APK to apk-output branch
+        id: build
+        continue-on-error: true
         run: |
-          set -e
-          cp app/build/outputs/apk/debug/app-debug.apk /tmp/app-debug.apk
+          set -o pipefail
+          gradle assembleDebug --no-daemon 2>&1 | tee /tmp/build.log
+
+      - name: Publish result (APK and/or build log) to apk-output branch
+        if: always()
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          cp /tmp/build.log /tmp/build.log.saved
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk /tmp/app-debug.apk.saved
+          fi
           git checkout --orphan apk-output
           git rm -rf . >/dev/null 2>&1 || true
-          cp /tmp/app-debug.apk .
-          git add app-debug.apk
-          git commit -m "APK build run ${{ github.run_number }} (${{ github.sha }})"
+          cp /tmp/build.log.saved ./build.log
+          if [ -f /tmp/app-debug.apk.saved ]; then
+            cp /tmp/app-debug.apk.saved ./app-debug.apk
+          fi
+          git add -A
+          git commit -m "Build run ${{ github.run_number }} (${{ github.sha }}) - outcome: ${{ steps.build.outcome }}"
           git push -f origin apk-output
+
+      - name: Fail job if build failed
+        if: steps.build.outcome == 'failure'
+        run: exit 1
