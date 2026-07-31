@@ -34,6 +34,7 @@ class DestinationAdapter(
         holder.subtitle.text = when (item.type) {
             DestType.SAF -> "SAF: " + safDisplayPath(holder.itemView.context, item.treeUri)
             DestType.MANUAL -> if (item.useRoot) "Путь вручную (root): ${item.path}" else "Путь вручную: ${item.path}"
+            DestType.SFTP -> "SFTP: ${item.sftpUser}@${item.sftpHost}:${item.sftpPort}${item.sftpRemotePath}"
         }
         holder.itemView.setOnClickListener { onClick(item) }
         onLongClick?.let { cb ->

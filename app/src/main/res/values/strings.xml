@@ -49,4 +49,15 @@
     <string name="internal_storage">Внутренняя память</string>
     <string name="dialog_edit_title">Изменить папку назначения</string>
     <string name="btn_change_saf_folder">Изменить папку (SAF)</string>
+
+    <string name="btn_add_sftp">Добавить SFTP-папку</string>
+    <string name="dialog_add_sftp_title">Удалённая папка (SFTP)</string>
+    <string name="hint_sftp_host">Хост/IP (например 192.168.1.10)</string>
+    <string name="hint_sftp_port">Порт (по умолчанию 22)</string>
+    <string name="hint_sftp_user">Имя пользователя</string>
+    <string name="hint_sftp_password">Пароль</string>
+    <string name="hint_sftp_remote_path">Путь на сервере (например /home/user/ShareCopy)</string>
+    <string name="sftp_testing">Проверка соединения…</string>
+    <string name="sftp_test_failed">Не удалось подключиться: %1$s</string>
+    <string name="sftp_test_ok">Соединение успешно</string>
 </resources>

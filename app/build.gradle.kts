@@ -11,8 +11,8 @@ android {
         applicationId = "com.sofstos.sharecopy"
         minSdk = 30
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 3
+        versionName = "0.3"
     }
 
     buildTypes {
@@ -42,4 +42,11 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.0.1")
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.leanback:leanback:1.0.0")
+
+    // SFTP-клиент для удалённых папок назначения
+    implementation("com.hierynomus:sshj:0.38.0")
+    // Даёт поддержку современных алгоритмов обмена ключами/шифрования (curve25519, ed25519 и т.п.),
+    // которых может не быть во встроенном криптопровайдере Android — иначе соединение с
+    // современными SSH-серверами (свежий OpenSSH) может не установиться.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
 }

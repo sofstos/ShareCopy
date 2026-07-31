@@ -39,6 +39,7 @@ object FileCopyEngine {
                 val ok = when (destination.type) {
                     DestType.SAF -> writeToSaf(context, uri, destination, displayName, subfolderName)
                     DestType.MANUAL -> writeToManual(context, uri, destination, displayName, subfolderName)
+                    DestType.SFTP -> writeToSftp(context, uri, destination, displayName, subfolderName)
                 }
                 if (ok) {
                     succeeded++
@@ -122,6 +123,17 @@ object FileCopyEngine {
         }
     }
 
+    private fun writeToSftp(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
+        val baseRemote = destination.sftpRemotePath?.trimEnd('/') ?: return false
+        val remoteDir = if (!subfolderName.isNullOrBlank())
+            "$baseRemote/${sanitizeName(subfolderName)}"
+        else
+            baseRemote
+        val input = context.contentResolver.openInputStream(source) ?: return false
+        val result = SftpHelper.uploadStream(destination, remoteDir, name, input)
+        return result.success
+    }
+
     /** Убирает символы, недопустимые в именах файлов/папок на большинстве файловых систем Android. */
     fun sanitizeName(raw: String): String {
         val cleaned = raw.replace(Regex("[/\\\\:*?\"<>|]"), "_").trim()
@@ -161,10 +173,26 @@ object FileCopyEngine {
             when (destination.type) {
                 DestType.MANUAL -> copyFolderManual(sourcePath.trimEnd('/'), srcName, destination, sourceUseRoot, move)
                 DestType.SAF -> copyFolderToSaf(context, srcFile, srcName, destination, sourceUseRoot, move)
+                DestType.SFTP -> copyFolderToSftp(srcFile, destination, sourceUseRoot, move)
             }
         } catch (e: Exception) {
             FolderCopyResult(false, e.message ?: "Неизвестная ошибка")
         }
+    }
+
+    private fun copyFolderToSftp(srcRoot: File, destination: Destination, sourceUseRoot: Boolean, move: Boolean): FolderCopyResult {
+        if (sourceUseRoot) {
+            return FolderCopyResult(
+                false,
+                "Копирование на SFTP требует прямого чтения файлов, root-источник не поддерживается — выбери назначение с типом \"Путь вручную\""
+            )
+        }
+        if (!srcRoot.canRead()) {
+            return FolderCopyResult(false, "Нет прав на чтение исходной папки: ${srcRoot.path}")
+        }
+        val baseRemote = destination.sftpRemotePath?.trimEnd('/') ?: return FolderCopyResult(false, "Не указан удалённый путь SFTP")
+        val result = SftpHelper.uploadFolder(destination, baseRemote, srcRoot, move)
+        return FolderCopyResult(result.success, if (result.success) "OK" else result.message)
     }
 
     private fun copyFolderManual(

@@ -99,6 +99,10 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
             showManualPathDialog()
         }
+        view.findViewById<TextView>(R.id.menuItemAddSftp).setOnClickListener {
+            dialog.dismiss()
+            showSftpDialog(null)
+        }
         view.findViewById<TextView>(R.id.menuItemAllFilesAccess).setOnClickListener {
             dialog.dismiss()
             requestAllFilesAccess()
@@ -206,7 +210,88 @@ class MainActivity : AppCompatActivity() {
                     .setNegativeButton(R.string.btn_cancel, null)
                     .show()
             }
+            DestType.SFTP -> showSftpDialog(dest)
         }
+    }
+
+    /**
+     * Диалог добавления/редактирования SFTP-назначения. Перед сохранением проверяет
+     * соединение (в фоне) — если подключиться не удалось, диалог не закрывается и
+     * показывается причина ошибки, чтобы не узнавать о неверном пароле/хосте только
+     * в момент реальной передачи файла.
+     */
+    private fun showSftpDialog(existing: Destination?) {
+        val view = layoutInflater.inflate(R.layout.dialog_add_sftp, null)
+        val editName = view.findViewById<EditText>(R.id.editSftpName)
+        val editHost = view.findViewById<EditText>(R.id.editSftpHost)
+        val editPort = view.findViewById<EditText>(R.id.editSftpPort)
+        val editUser = view.findViewById<EditText>(R.id.editSftpUser)
+        val editPassword = view.findViewById<EditText>(R.id.editSftpPassword)
+        val editRemotePath = view.findViewById<EditText>(R.id.editSftpRemotePath)
+
+        existing?.let {
+            editName.setText(it.name)
+            editHost.setText(it.sftpHost)
+            editPort.setText(it.sftpPort.toString())
+            editUser.setText(it.sftpUser)
+            editPassword.setText(it.sftpPassword)
+            editRemotePath.setText(it.sftpRemotePath)
+        }
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_add_sftp_title)
+            .setView(view)
+            .setPositiveButton(R.string.btn_save, null)
+            .setNegativeButton(R.string.btn_cancel, null)
+        if (existing != null) {
+            builder.setNeutralButton(R.string.btn_delete) { _, _ -> confirmDelete(existing) }
+        }
+        val dialog = builder.create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val host = editHost.text.toString().trim()
+                val port = editPort.text.toString().trim().toIntOrNull() ?: 22
+                val user = editUser.text.toString().trim()
+                val password = editPassword.text.toString()
+                val remotePath = editRemotePath.text.toString().trim().ifBlank { "/" }
+                val name = editName.text.toString().ifBlank { "$user@$host" }
+
+                if (host.isBlank() || user.isBlank()) {
+                    Toast.makeText(this, R.string.hint_sftp_host, Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                Toast.makeText(this, R.string.sftp_testing, Toast.LENGTH_SHORT).show()
+                Thread {
+                    val result = SftpHelper.testConnection(host, port, user, password, remotePath)
+                    runOnUiThread {
+                        if (result.success) {
+                            val base = existing ?: Destination(name = name, type = DestType.SFTP)
+                            val toSave = base.copy(
+                                name = name,
+                                type = DestType.SFTP,
+                                sftpHost = host,
+                                sftpPort = port,
+                                sftpUser = user,
+                                sftpPassword = password,
+                                sftpRemotePath = remotePath
+                            )
+                            if (existing != null) store.updateDestination(toSave) else store.addDestination(toSave)
+                            refreshList()
+                            dialog.dismiss()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                getString(R.string.sftp_test_failed, result.message),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }.start()
+            }
+        }
+        dialog.show()
     }
 
     private fun confirmDelete(dest: Destination) {
