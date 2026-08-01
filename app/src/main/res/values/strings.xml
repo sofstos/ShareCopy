@@ -90,4 +90,10 @@
     <string name="hint_mega_remote_path">Путь на Mega (например /Photos)</string>
     <string name="mega_testing">Проверка соединения с Mega…</string>
     <string name="mega_test_failed">Не удалось подключиться: %1$s</string>
+
+    <string name="notif_channel_name">Копирование по сети</string>
+    <string name="notif_channel_desc">Прогресс и результат копирования на SFTP/Mega</string>
+    <string name="notif_progress_title">ShareCopy: %1$s</string>
+    <string name="notif_progress_text">%1$s → «%2$s»…</string>
+    <string name="toast_copy_started_background">%1$s началось в фоне — следи за уведомлением</string>
 </resources>

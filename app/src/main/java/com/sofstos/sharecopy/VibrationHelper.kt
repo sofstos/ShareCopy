@@ -8,8 +8,9 @@ import android.os.VibratorManager
 
 object VibrationHelper {
 
-    private val SUCCESS_PATTERN = longArrayOf(0, 400, 200, 400)
-    private val ERROR_PATTERN = longArrayOf(0, 100, 100, 100, 100, 100)
+    // Утроено по просьбе пользователя — исходные 400/200/400 и 100×5 были едва заметны.
+    private val SUCCESS_PATTERN = longArrayOf(0, 1200, 600, 1200)
+    private val ERROR_PATTERN = longArrayOf(0, 300, 300, 300, 300, 300)
 
     fun success(context: Context) {
         if (!SettingsStore(context).isVibrationEnabled()) return

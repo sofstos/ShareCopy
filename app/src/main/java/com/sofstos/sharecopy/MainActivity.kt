@@ -49,9 +49,20 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private val notificationPermissionLauncher = registerForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.RequestPermission()
+    ) { /* без разрешения сервис копирования просто не покажет уведомление, не критично */ }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        if (Build.VERSION.SDK_INT >= 33) {
+            val granted = androidx.core.content.ContextCompat.checkSelfPermission(
+                this, android.Manifest.permission.POST_NOTIFICATIONS
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!granted) notificationPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
 
         store = SettingsStore(this)
         recycler = findViewById(R.id.recyclerDestinations)
@@ -270,7 +281,8 @@ class MainActivity : AppCompatActivity() {
         val dialog = builder.create()
 
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val saveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            saveButton.setOnClickListener {
                 val host = editHost.text.toString().trim()
                 val port = editPort.text.toString().trim().toIntOrNull() ?: 22
                 val user = editUser.text.toString().trim()
@@ -293,6 +305,9 @@ class MainActivity : AppCompatActivity() {
                     sftpRemotePath = remotePath
                 )
 
+                // Блокируем кнопку на время проверки — иначе повторные нажатия (пока идёт
+                // фоновая проверка) создают несколько одинаковых записей подряд.
+                saveButton.isEnabled = false
                 Toast.makeText(this, R.string.sftp_testing, Toast.LENGTH_SHORT).show()
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
@@ -307,6 +322,7 @@ class MainActivity : AppCompatActivity() {
                             refreshList()
                             dialog.dismiss()
                         } else {
+                            saveButton.isEnabled = true
                             Toast.makeText(
                                 this,
                                 getString(R.string.sftp_test_failed, testResult.message),
@@ -346,7 +362,8 @@ class MainActivity : AppCompatActivity() {
         val dialog = builder.create()
 
         dialog.setOnShowListener {
-            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+            val saveButton = dialog.getButton(AlertDialog.BUTTON_POSITIVE)
+            saveButton.setOnClickListener {
                 val user = editUser.text.toString().trim()
                 val password = editPassword.text.toString()
                 val remotePath = editRemotePath.text.toString().trim().ifBlank { "/" }
@@ -365,6 +382,7 @@ class MainActivity : AppCompatActivity() {
                     megaRemotePath = remotePath
                 )
 
+                saveButton.isEnabled = false
                 Toast.makeText(this, R.string.mega_testing, Toast.LENGTH_SHORT).show()
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
@@ -379,6 +397,7 @@ class MainActivity : AppCompatActivity() {
                             refreshList()
                             dialog.dismiss()
                         } else {
+                            saveButton.isEnabled = true
                             Toast.makeText(
                                 this,
                                 getString(R.string.mega_test_failed, testResult.message),

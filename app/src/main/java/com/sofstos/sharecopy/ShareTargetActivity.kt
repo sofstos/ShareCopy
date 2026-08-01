@@ -11,6 +11,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -224,11 +225,29 @@ class ShareTargetActivity : AppCompatActivity() {
     }
 
     private fun startCopy(dest: Destination, move: Boolean) {
+        val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
+        val path = folderPath
+
+        // SFTP/Mega — сетевые назначения, копирование может занять долгое время.
+        // Запускаем через foreground-сервис с уведомлением и сразу закрываем этот экран —
+        // не заставляем пользователя ждать, глядя на статичный текст "Копирование…".
+        if (dest.type == DestType.SFTP || dest.type == DestType.MEGA) {
+            val intent = if (path != null) {
+                RcloneCopyService.buildFolderIntent(this, path, folderUseRoot, dest.id, move)
+            } else {
+                val subfolder = if (checkSubfolder.visibility == View.VISIBLE && checkSubfolder.isChecked)
+                    sourceAppLabel() else null
+                RcloneCopyService.buildFilesIntent(this, fileSources, dest.id, move, subfolder)
+            }
+            ContextCompat.startForegroundService(this, intent)
+            Toast.makeText(this, getString(R.string.toast_copy_started_background, opWord), Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
         isRunning = true
         textStatus.visibility = View.VISIBLE
-        val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
 
-        val path = folderPath
         if (path != null) {
             textStatus.text = getString(R.string.folder_copy_in_progress)
             Thread {

@@ -10,6 +10,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 
@@ -130,9 +131,18 @@ class FolderBrowserActivity : AppCompatActivity() {
     }
 
     private fun runFolderCopy(sourcePath: String, dest: Destination, move: Boolean) {
-        isBusy = true
         val sourceUseRoot = checkBrowseRoot.isChecked
         val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
+
+        if (dest.type == DestType.SFTP || dest.type == DestType.MEGA) {
+            val intent = RcloneCopyService.buildFolderIntent(this, sourcePath, sourceUseRoot, dest.id, move)
+            ContextCompat.startForegroundService(this, intent)
+            Toast.makeText(this, getString(R.string.toast_copy_started_background, opWord), Toast.LENGTH_LONG).show()
+            finish()
+            return
+        }
+
+        isBusy = true
         Toast.makeText(this, R.string.folder_copy_in_progress, Toast.LENGTH_SHORT).show()
 
         Thread {

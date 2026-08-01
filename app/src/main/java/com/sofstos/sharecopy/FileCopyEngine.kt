@@ -164,7 +164,9 @@ object FileCopyEngine {
             DestType.MEGA -> {
                 val user = destination.megaUser ?: return null
                 val pass = destination.megaPassword ?: ""
-                val basePath = destination.megaRemotePath?.trimEnd('/')?.ifBlank { "/" } ?: "/"
+                // У Mega ведущий "/" в относительном пути создаёт папку с ПУСТЫМ именем —
+                // поэтому здесь (в отличие от SFTP) убираем слэши с обеих сторон целиком.
+                val basePath = destination.megaRemotePath?.trim('/') ?: ""
                 Triple("mega", mapOf("user" to user, "pass" to pass), basePath)
             }
             else -> null
@@ -178,10 +180,7 @@ object FileCopyEngine {
         if (!ensured.success) return false
 
         val dstFs = "$remoteName:"
-        val dstDir = if (!subfolderName.isNullOrBlank())
-            "${basePath.trimEnd('/')}/${sanitizeName(subfolderName)}"
-        else
-            basePath
+        val dstDir = if (!subfolderName.isNullOrBlank()) joinRemoteDir(basePath, sanitizeName(subfolderName)) else basePath
 
         // rclone работает с реальными локальными путями, а не content:// — стримим во временный
         // файл с ИСХОДНЫМ именем в уникальной по операции подпапке кэша.
@@ -198,6 +197,15 @@ object FileCopyEngine {
         } finally {
             tempDir.deleteRecursively()
         }
+    }
+
+    /**
+     * Склеивает базовый путь и подпапку через "/", НО не добавляет ведущий слэш, если base пуст —
+     * иначе для бэкендов вроде Mega (в отличие от SFTP) это создаёт папку с пустым именем.
+     */
+    private fun joinRemoteDir(base: String, sub: String): String {
+        val b = base.trimEnd('/')
+        return if (b.isBlank()) sub else "$b/$sub"
     }
 
     /** Убирает символы, недопустимые в именах файлов/папок на большинстве файловых систем Android. */

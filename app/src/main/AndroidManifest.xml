@@ -26,6 +26,12 @@
 
     <uses-permission android:name="android.permission.VIBRATE" />
 
+    <!-- Для foreground-сервиса, который выполняет медленное сетевое копирование (SFTP/Mega)
+         в фоне с уведомлением о прогрессе — вместо "зависания" экрана "Куда скопировать" -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Приложение не требует сенсорного экрана и лидбэк-навигации — разрешаем установку на TV-приставки -->
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
@@ -64,6 +70,13 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <!-- Foreground-сервис для медленного сетевого копирования (SFTP/Mega): показывает
+             уведомление о прогрессе и результате, работает даже если экран приложения закрыт -->
+        <service
+            android:name=".RcloneCopyService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <!-- Обозреватель файловой системы для выбора папки-источника (копирование/перемещение целых папок) -->
         <activity
