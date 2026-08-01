@@ -106,26 +106,35 @@ jobs:
           set -o pipefail
           { cat /tmp/librclone_build.log 2>/dev/null; echo "=== GRADLE BUILD ==="; gradle assembleDebug --no-daemon; } 2>&1 | tee /tmp/build.log
 
-      - name: Publish result (APK and/or build log) to apk-output branch
+      - name: Publish build log to apk-output branch
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           cp /tmp/build.log /tmp/build.log.saved
-          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
-            cp app/build/outputs/apk/debug/app-debug.apk /tmp/app-debug.apk.saved
-          fi
           git checkout --orphan apk-output
           # Полностью чистим рабочую директорию (build/, .gradle/, исходники и т.п.),
           # чтобы в служебной ветке остались только нужные файлы результата.
           find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp /tmp/build.log.saved ./build.log
-          if [ -f /tmp/app-debug.apk.saved ]; then
-            cp /tmp/app-debug.apk.saved ./app-debug.apk
-          fi
           git add -A
-          git commit -m "Build run ${{ github.run_number }} (${{ github.sha }}) - outcome: ${{ steps.build.outcome }}"
+          git commit -m "Build log run ${{ github.run_number }} (${{ github.sha }}) - outcome: ${{ steps.build.outcome }}"
           git push -f origin apk-output
+
+      - name: Publish APK as GitHub Release asset
+        if: steps.build.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # APK теперь заметно больше 100 МБ (rclone) — обычный git push такой файл не пропустит.
+          # Release assets отдаются через release-assets.githubusercontent.com, а не через
+          # тот же Azure Blob, что блокировал обычные Actions-артефакты и логи джобов.
+          gh release delete latest-build --yes --cleanup-tag --repo "${{ github.repository }}" || true
+          gh release create latest-build "app/build/outputs/apk/debug/app-debug.apk" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Latest build (run ${{ github.run_number }})" \
+            --notes "Automated build from commit ${{ github.sha }}"
 
       - name: Fail job if build failed
         if: steps.build.outcome == 'failure'
