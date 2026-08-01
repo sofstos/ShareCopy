@@ -115,7 +115,17 @@ object RcloneHelper {
             put("dstFs", dstFs)
             put("dstRemote", if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target")
         }
-        return call("operations/copyfile", body)
+        val result = call("operations/copyfile", body)
+        if (!result.success) return result
+
+        // Некоторые бэкенды (замечено на Mega) иногда рапортуют успех (код 200), хотя по факту
+        // файл не появляется на удалённой стороне — перестраховываемся явной проверкой листингом.
+        val nowThere = listNames(dstFs, dstDir).contains(target)
+        return if (nowThere) result
+        else RpcResult(
+            false, result.json,
+            "rclone сообщил об успехе, но файл не найден на сервере после копирования (возможно, задержка/ограничение на стороне сервиса)"
+        )
     }
 
     /** Рекурсивно копирует (или перемещает, что удаляет источник) целую локальную папку в [dstFs]:[dstDir]/<имя папки>. */

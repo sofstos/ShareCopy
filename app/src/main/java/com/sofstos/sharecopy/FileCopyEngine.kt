@@ -68,7 +68,7 @@ object FileCopyEngine {
      * файл в формате "ИмяПриложения_YYYY-MM-DD_hh-mm-ss.ext". Если определить не удалось —
      * возвращает исходное имя без изменений.
      */
-    private fun maybeRenameScreenshot(context: Context, uri: Uri, originalName: String): String {
+    fun maybeRenameScreenshot(context: Context, uri: Uri, originalName: String): String {
         val looksLikeScreenshot = ScreenshotHelper.isScreenshotUri(context, originalName) ||
             ScreenshotHelper.isInScreenshotsFolder(context, uri)
         if (!looksLikeScreenshot) return originalName
@@ -82,7 +82,7 @@ object FileCopyEngine {
         return "${sanitizeName(appLabel)}_$stamp.$ext"
     }
 
-    private fun queryDisplayName(context: Context, uri: Uri): String? {
+    fun queryDisplayName(context: Context, uri: Uri): String? {
         return try {
             context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
                 val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
@@ -171,6 +171,39 @@ object FileCopyEngine {
             }
             else -> null
         }
+    }
+
+    /**
+     * Загружает уже подготовленные локальные файлы (имя файла на диске = желаемое имя на сервере).
+     * Используется вместо writeToRclone, когда содержимое content:// уже заранее скопировано в
+     * реальные файлы (см. ShareTargetActivity) — так сервис копирования не зависит от разрешений
+     * на исходный content:// URI, которые Android может отозвать после закрытия экрана-источника.
+     */
+    fun uploadStagedFiles(files: List<File>, destination: Destination, subfolderName: String?): CopyResult {
+        val (type, params, basePath) = rcloneBackendInfo(destination)
+            ?: return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (не настроены параметры подключения)" })
+
+        val remoteName = RcloneHelper.remoteName(destination.id)
+        val ensured = RcloneHelper.createOrReplaceRemote(remoteName, type, params)
+        if (!ensured.success) {
+            return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (${ensured.message})" })
+        }
+
+        val dstFs = "$remoteName:"
+        val dstDir = if (!subfolderName.isNullOrBlank()) joinRemoteDir(basePath, sanitizeName(subfolderName)) else basePath
+
+        var succeeded = 0
+        val errors = mutableListOf<String>()
+        for (file in files) {
+            val dir = file.parentFile?.absolutePath
+            if (dir == null) {
+                errors.add("${file.name} (внутренняя ошибка пути)")
+                continue
+            }
+            val result = RcloneHelper.copyLocalFile(dir, file.name, dstFs, dstDir)
+            if (result.success) succeeded++ else errors.add("${file.name} (${result.message})")
+        }
+        return CopyResult(files.size, succeeded, emptyList(), errors)
     }
 
     private fun writeToRclone(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
@@ -347,7 +380,7 @@ object FileCopyEngine {
     }
 
     /** Пытаемся удалить исходный файл (для режима "переместить"). Часто невозможно из-за прав, выданных приложением-источником. */
-    private fun tryRemoveSource(context: Context, uri: Uri): Boolean {
+    fun tryRemoveSource(context: Context, uri: Uri): Boolean {
         return try {
             context.contentResolver.delete(uri, null, null) > 0
         } catch (e: Exception) {

@@ -6,17 +6,24 @@ import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import java.io.File
 
 /**
  * Копирование/перемещение на SFTP/Mega может занимать долгое время (сеть, задержки).
  * Раньше это делалось прямо в ShareTargetActivity/FolderBrowserActivity фоновым потоком —
- * экран при этом "висел" на статусе "Копирование…" без обратной связи, и было непонятно,
- * работает приложение или зависло. Теперь для сетевых назначений используется этот
- * foreground-сервис: экран закрывается сразу, а прогресс/результат показывает уведомление.
+ * экран при этом "висел" на статусе "Копирование…" без обратной связи. Теперь для сетевых
+ * назначений используется этот foreground-сервис: экран закрывается сразу, а прогресс/
+ * результат показывает уведомление.
+ *
+ * ВАЖНО про режим "файлы" (не папка): сервис получает уже ПОДГОТОВЛЕННЫЕ локальные файлы
+ * (см. ShareTargetActivity.stageAndStartRcloneCopy), а не исходные content:// URI. Раньше
+ * URI передавались прямо в сервис, и Android иногда отзывал разрешение на их чтение сразу
+ * после закрытия Activity-источника (ShareTargetActivity), из-за чего копирование на SFTP
+ * стабильно проваливалось. Теперь content:// читается ещё в самой Activity (это быстро,
+ * т.к. локально), и сервису передаётся только путь к уже готовым файлам на диске.
  */
 class RcloneCopyService : Service() {
 
@@ -42,6 +49,8 @@ class RcloneCopyService : Service() {
         startForeground(FOREGROUND_NOTIF_ID, buildProgressNotification(opWord, destName))
         val resultNotifId = FOREGROUND_NOTIF_ID + startId
 
+        val stagingDirPath = intent.getStringExtra(EXTRA_STAGING_DIR)
+
         Thread {
             val (success, resultText) = runCopy(intent, dest, move, opWord, destName)
 
@@ -49,6 +58,10 @@ class RcloneCopyService : Service() {
 
             val manager = getSystemService(NotificationManager::class.java)
             manager?.notify(resultNotifId, buildResultNotification(resultText))
+
+            // Подготовленные временные файлы (для режима "файлы") больше не нужны — чистим кэш.
+            stagingDirPath?.let { File(it).deleteRecursively() }
+
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
         }.start()
@@ -62,29 +75,45 @@ class RcloneCopyService : Service() {
         }
 
         val isFolder = intent.getBooleanExtra(EXTRA_IS_FOLDER, false)
-        return if (isFolder) {
+        if (isFolder) {
             val folderPath = intent.getStringExtra(EXTRA_FOLDER_PATH) ?: ""
             val folderUseRoot = intent.getBooleanExtra(EXTRA_FOLDER_USE_ROOT, false)
             val result = FileCopyEngine.runFolder(applicationContext, folderPath, folderUseRoot, dest, move)
             val text = if (result.success) getString(R.string.folder_result_ok, opWord, destName)
                        else getString(R.string.folder_result_fail, opWord, result.message)
-            result.success to text
-        } else {
-            val sources: ArrayList<Uri> = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                intent.getParcelableArrayListExtra(EXTRA_SOURCES, Uri::class.java) ?: arrayListOf()
-            else
-                @Suppress("DEPRECATION") intent.getParcelableArrayListExtra(EXTRA_SOURCES) ?: arrayListOf()
-            val subfolder = intent.getStringExtra(EXTRA_SUBFOLDER)
-            val result = FileCopyEngine.run(applicationContext, sources, dest, move, subfolder)
-            val success = result.total > 0 && result.succeeded == result.total
-            val text = when {
-                result.total == 0 -> getString(R.string.error_no_destinations)
-                result.succeeded == result.total -> getString(R.string.copy_result_ok, opWord, result.succeeded, result.total, destName)
-                result.succeeded == 0 -> getString(R.string.copy_result_fail_all, opWord, result.total, destName)
-                else -> getString(R.string.copy_result_partial, opWord, result.succeeded, result.total, destName)
-            }
-            success to text
+            return result.success to text
         }
+
+        val stagingDirPath = intent.getStringExtra(EXTRA_STAGING_DIR)
+        val fileNames = intent.getStringArrayListExtra(EXTRA_FILE_NAMES) ?: arrayListOf()
+        val subfolder = intent.getStringExtra(EXTRA_SUBFOLDER)
+
+        if (stagingDirPath == null || fileNames.isEmpty()) {
+            return false to getString(R.string.error_prepare_files_failed)
+        }
+
+        val stagingDir = File(stagingDirPath)
+        val files = fileNames.map { File(stagingDir, it) }.filter { it.exists() }
+        val result = FileCopyEngine.uploadStagedFiles(files, dest, subfolder)
+
+        val success = result.total > 0 && result.succeeded == result.total
+        val text = when {
+            result.total == 0 -> getString(R.string.error_prepare_files_failed)
+            result.succeeded == result.total -> getString(R.string.copy_result_ok, opWord, result.succeeded, result.total, destName)
+            result.succeeded == 0 -> getString(R.string.copy_result_fail_all, opWord, result.total, destName) +
+                errorsSuffix(result.errors)
+            else -> getString(R.string.copy_result_partial, opWord, result.succeeded, result.total, destName) +
+                errorsSuffix(result.errors)
+        }
+        return success to text
+    }
+
+    /** Дописывает к тексту результата конкретные причины ошибок (укорачивая при необходимости). */
+    private fun errorsSuffix(errors: List<String>): String {
+        if (errors.isEmpty()) return ""
+        val joined = errors.joinToString("; ")
+        val trimmed = if (joined.length > 300) joined.take(300) + "…" else joined
+        return "\n$trimmed"
     }
 
     private fun ensureChannel() {
@@ -113,6 +142,7 @@ class RcloneCopyService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle(getString(R.string.app_name))
             .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setSmallIcon(R.mipmap.ic_launcher)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
@@ -125,21 +155,28 @@ class RcloneCopyService : Service() {
 
         private const val EXTRA_DEST_ID = "destId"
         private const val EXTRA_MOVE = "move"
-        private const val EXTRA_SOURCES = "sources"
         private const val EXTRA_SUBFOLDER = "subfolder"
         private const val EXTRA_IS_FOLDER = "isFolder"
         private const val EXTRA_FOLDER_PATH = "folderPath"
         private const val EXTRA_FOLDER_USE_ROOT = "folderUseRoot"
+        private const val EXTRA_STAGING_DIR = "stagingDir"
+        private const val EXTRA_FILE_NAMES = "fileNames"
 
-        fun buildFilesIntent(
+        /**
+         * [stagingDirPath] — папка с уже подготовленными (прочитанными из content://) локальными
+         * файлами, [fileNames] — их имена (= желаемые имена на сервере) внутри этой папки.
+         */
+        fun buildStagedFilesIntent(
             context: Context,
-            sources: ArrayList<Uri>,
+            stagingDirPath: String,
+            fileNames: List<String>,
             destId: String,
             move: Boolean,
             subfolder: String?
         ): Intent = Intent(context, RcloneCopyService::class.java).apply {
             putExtra(EXTRA_IS_FOLDER, false)
-            putParcelableArrayListExtra(EXTRA_SOURCES, sources)
+            putExtra(EXTRA_STAGING_DIR, stagingDirPath)
+            putStringArrayListExtra(EXTRA_FILE_NAMES, ArrayList(fileNames))
             putExtra(EXTRA_DEST_ID, destId)
             putExtra(EXTRA_MOVE, move)
             putExtra(EXTRA_SUBFOLDER, subfolder)

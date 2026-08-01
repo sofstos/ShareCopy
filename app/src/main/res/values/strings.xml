@@ -96,4 +96,8 @@
     <string name="notif_progress_title">ShareCopy: %1$s</string>
     <string name="notif_progress_text">%1$s → «%2$s»…</string>
     <string name="toast_copy_started_background">%1$s началось в фоне — следи за уведомлением</string>
+
+    <string name="preparing_files">Подготовка файлов…</string>
+    <string name="error_prepare_files_failed">Не удалось подготовить ни один файл для отправки</string>
+    <string name="toast_some_files_prepare_failed">Часть файлов не удалось прочитать — остальные копируются</string>
 </resources>

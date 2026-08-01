@@ -16,6 +16,7 @@ import androidx.core.content.FileProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -232,16 +233,18 @@ class ShareTargetActivity : AppCompatActivity() {
         // Запускаем через foreground-сервис с уведомлением и сразу закрываем этот экран —
         // не заставляем пользователя ждать, глядя на статичный текст "Копирование…".
         if (dest.type == DestType.SFTP || dest.type == DestType.MEGA) {
-            val intent = if (path != null) {
-                RcloneCopyService.buildFolderIntent(this, path, folderUseRoot, dest.id, move)
+            if (path != null) {
+                // Папка — источник уже реальный путь в файловой системе, content:// не участвует,
+                // стейджинг не нужен, можно сразу передать в сервис.
+                val intent = RcloneCopyService.buildFolderIntent(this, path, folderUseRoot, dest.id, move)
+                ContextCompat.startForegroundService(this, intent)
+                Toast.makeText(this, getString(R.string.toast_copy_started_background, opWord), Toast.LENGTH_LONG).show()
+                finish()
             } else {
                 val subfolder = if (checkSubfolder.visibility == View.VISIBLE && checkSubfolder.isChecked)
                     sourceAppLabel() else null
-                RcloneCopyService.buildFilesIntent(this, fileSources, dest.id, move, subfolder)
+                stageAndStartRcloneCopy(dest, move, subfolder, opWord)
             }
-            ContextCompat.startForegroundService(this, intent)
-            Toast.makeText(this, getString(R.string.toast_copy_started_background, opWord), Toast.LENGTH_LONG).show()
-            finish()
             return
         }
 
@@ -281,6 +284,80 @@ class ShareTargetActivity : AppCompatActivity() {
                 if (result.succeeded == result.total) VibrationHelper.success(this) else VibrationHelper.error(this)
                 if (result.notRemovedAfterMove.isNotEmpty()) {
                     Toast.makeText(this, R.string.copy_move_warning, Toast.LENGTH_LONG).show()
+                }
+                finish()
+            }
+        }.start()
+    }
+
+    /**
+     * Читает все fileSources (content://) в реальные локальные temp-файлы ПОКА эта Activity ещё
+     * жива (это быстрая локальная операция), и только потом запускает RcloneCopyService с уже
+     * готовыми файлами. Так сервис никогда не работает с "чужими" content:// напрямую — раньше
+     * Android иногда успевал отозвать разрешение на чтение такого URI сразу после закрытия этого
+     * экрана, и SFTP/Mega-копирование проваливалось без понятной причины.
+     */
+    private fun stageAndStartRcloneCopy(dest: Destination, move: Boolean, subfolder: String?, opWord: String) {
+        isRunning = true
+        textStatus.visibility = View.VISIBLE
+        textStatus.text = getString(R.string.preparing_files)
+
+        Thread {
+            val stagingDir = File(cacheDir, "network_stage/${System.nanoTime()}")
+            stagingDir.mkdirs()
+            val stagedNames = mutableListOf<String>()
+            var anyFailed = false
+
+            for (uri in fileSources) {
+                try {
+                    var displayName = FileCopyEngine.queryDisplayName(applicationContext, uri) ?: "file_${System.currentTimeMillis()}"
+                    displayName = FileCopyEngine.maybeRenameScreenshot(applicationContext, uri, displayName)
+
+                    // Уникальное имя внутри этой временной папки (на случай двух файлов с одинаковым именем в одной партии).
+                    var candidateName = displayName
+                    var i = 1
+                    while (File(stagingDir, candidateName).exists()) {
+                        val dot = displayName.lastIndexOf('.')
+                        val base = if (dot > 0) displayName.substring(0, dot) else displayName
+                        val ext = if (dot > 0) displayName.substring(dot) else ""
+                        candidateName = "$base ($i)$ext"
+                        i++
+                    }
+
+                    val destFile = File(stagingDir, candidateName)
+                    val opened = contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(destFile).use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
+                        true
+                    } ?: false
+
+                    if (opened) {
+                        stagedNames.add(candidateName)
+                        if (move) FileCopyEngine.tryRemoveSource(applicationContext, uri)
+                    } else {
+                        anyFailed = true
+                    }
+                } catch (e: Exception) {
+                    anyFailed = true
+                }
+            }
+
+            runOnUiThread {
+                if (stagedNames.isEmpty()) {
+                    Toast.makeText(this, R.string.error_prepare_files_failed, Toast.LENGTH_LONG).show()
+                    stagingDir.deleteRecursively()
+                    finish()
+                    return@runOnUiThread
+                }
+
+                val intent = RcloneCopyService.buildStagedFilesIntent(
+                    this, stagingDir.absolutePath, stagedNames, dest.id, move, subfolder
+                )
+                ContextCompat.startForegroundService(this, intent)
+
+                if (anyFailed) {
+                    Toast.makeText(this, R.string.toast_some_files_prepare_failed, Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this, getString(R.string.toast_copy_started_background, opWord), Toast.LENGTH_LONG).show()
                 }
                 finish()
             }
