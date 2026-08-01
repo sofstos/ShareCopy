@@ -129,14 +129,17 @@ jobs:
       - name: Publish build log to apk-output branch
         if: always()
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
           cp /tmp/build.log /tmp/build.log.saved 2>/dev/null || echo "no build.log" > /tmp/build.log.saved
           cp /tmp/release.log /tmp/release.log.saved 2>/dev/null || echo "no release.log (step didn't run)" > /tmp/release.log.saved
+          # ВАЖНО: делаем это в отдельной изолированной директории, а не в $GITHUB_WORKSPACE —
+          # иначе git checkout --orphan/rm -rf стирает app/libs/librclone.aar ДО того, как
+          # actions/cache успевает сохранить его в конце job'а (именно это и происходило).
+          rm -rf /tmp/pub && mkdir -p /tmp/pub && cd /tmp/pub
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
           git checkout --orphan apk-output
-          # Полностью чистим рабочую директорию (build/, .gradle/, исходники и т.п.),
-          # чтобы в служебной ветке остались только нужные файлы результата.
-          find . -mindepth 1 -maxdepth 1 ! -name '.git' -exec rm -rf {} +
           cp /tmp/build.log.saved ./build.log
           cp /tmp/release.log.saved ./release.log
           git add -A
