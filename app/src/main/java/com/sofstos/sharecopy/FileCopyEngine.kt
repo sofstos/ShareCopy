@@ -43,7 +43,7 @@ object FileCopyEngine {
                 val ok = when (destination.type) {
                     DestType.SAF -> writeToSaf(context, uri, destination, displayName, subfolderName)
                     DestType.MANUAL -> writeToManual(context, uri, destination, displayName, subfolderName)
-                    DestType.SFTP -> writeToSftp(context, uri, destination, displayName, subfolderName)
+                    DestType.SFTP, DestType.MEGA -> writeToRclone(context, uri, destination, displayName, subfolderName)
                 }
                 if (ok) {
                     succeeded++
@@ -147,15 +147,57 @@ object FileCopyEngine {
         }
     }
 
-    private fun writeToSftp(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
-        val baseRemote = destination.sftpRemotePath?.trimEnd('/') ?: return false
-        val remoteDir = if (!subfolderName.isNullOrBlank())
-            "$baseRemote/${sanitizeName(subfolderName)}"
+    /** Общие параметры подключения rclone (тип бэкенда, параметры, базовый путь на удалённом хранилище) для SFTP/MEGA. */
+    private fun rcloneBackendInfo(destination: Destination): Triple<String, Map<String, String>, String>? {
+        return when (destination.type) {
+            DestType.SFTP -> {
+                val host = destination.sftpHost ?: return null
+                val user = destination.sftpUser ?: return null
+                val pass = destination.sftpPassword ?: ""
+                val basePath = destination.sftpRemotePath?.trimEnd('/')?.ifBlank { "/" } ?: "/"
+                Triple(
+                    "sftp",
+                    mapOf("host" to host, "user" to user, "pass" to pass, "port" to destination.sftpPort.toString()),
+                    basePath
+                )
+            }
+            DestType.MEGA -> {
+                val user = destination.megaUser ?: return null
+                val pass = destination.megaPassword ?: ""
+                val basePath = destination.megaRemotePath?.trimEnd('/')?.ifBlank { "/" } ?: "/"
+                Triple("mega", mapOf("user" to user, "pass" to pass), basePath)
+            }
+            else -> null
+        }
+    }
+
+    private fun writeToRclone(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
+        val (type, params, basePath) = rcloneBackendInfo(destination) ?: return false
+        val remoteName = RcloneHelper.remoteName(destination.id)
+        val ensured = RcloneHelper.createOrReplaceRemote(remoteName, type, params)
+        if (!ensured.success) return false
+
+        val dstFs = "$remoteName:"
+        val dstDir = if (!subfolderName.isNullOrBlank())
+            "${basePath.trimEnd('/')}/${sanitizeName(subfolderName)}"
         else
-            baseRemote
-        val input = context.contentResolver.openInputStream(source) ?: return false
-        val result = SftpHelper.uploadStream(destination, remoteDir, name, input)
-        return result.success
+            basePath
+
+        // rclone работает с реальными локальными путями, а не content:// — стримим во временный
+        // файл с ИСХОДНЫМ именем в уникальной по операции подпапке кэша.
+        val tempDir = File(context.cacheDir, "rclone_upload/${System.nanoTime()}")
+        return try {
+            tempDir.mkdirs()
+            val tempFile = File(tempDir, name)
+            context.contentResolver.openInputStream(source)?.use { input ->
+                FileOutputStream(tempFile).use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
+            } ?: return false
+
+            val result = RcloneHelper.copyLocalFile(tempDir.absolutePath, name, dstFs, dstDir)
+            result.success
+        } finally {
+            tempDir.deleteRecursively()
+        }
     }
 
     /** Убирает символы, недопустимые в именах файлов/папок на большинстве файловых систем Android. */
@@ -197,25 +239,30 @@ object FileCopyEngine {
             when (destination.type) {
                 DestType.MANUAL -> copyFolderManual(sourcePath.trimEnd('/'), srcName, destination, sourceUseRoot, move)
                 DestType.SAF -> copyFolderToSaf(context, srcFile, srcName, destination, sourceUseRoot, move)
-                DestType.SFTP -> copyFolderToSftp(srcFile, destination, sourceUseRoot, move)
+                DestType.SFTP, DestType.MEGA -> copyFolderToRclone(srcFile, destination, sourceUseRoot, move)
             }
         } catch (e: Exception) {
             FolderCopyResult(false, e.message ?: "Неизвестная ошибка")
         }
     }
 
-    private fun copyFolderToSftp(srcRoot: File, destination: Destination, sourceUseRoot: Boolean, move: Boolean): FolderCopyResult {
+    private fun copyFolderToRclone(srcRoot: File, destination: Destination, sourceUseRoot: Boolean, move: Boolean): FolderCopyResult {
         if (sourceUseRoot) {
             return FolderCopyResult(
                 false,
-                "Копирование на SFTP требует прямого чтения файлов, root-источник не поддерживается — выбери назначение с типом \"Путь вручную\""
+                "Копирование на SFTP/Mega требует прямого чтения файлов, root-источник не поддерживается — выбери назначение с типом \"Путь вручную\""
             )
         }
         if (!srcRoot.canRead()) {
             return FolderCopyResult(false, "Нет прав на чтение исходной папки: ${srcRoot.path}")
         }
-        val baseRemote = destination.sftpRemotePath?.trimEnd('/') ?: return FolderCopyResult(false, "Не указан удалённый путь SFTP")
-        val result = SftpHelper.uploadFolder(destination, baseRemote, srcRoot, move)
+        val (type, params, basePath) = rcloneBackendInfo(destination)
+            ?: return FolderCopyResult(false, "Не настроены параметры подключения")
+        val remoteName = RcloneHelper.remoteName(destination.id)
+        val ensured = RcloneHelper.createOrReplaceRemote(remoteName, type, params)
+        if (!ensured.success) return FolderCopyResult(false, "Не удалось подключиться: ${ensured.message}")
+
+        val result = RcloneHelper.copyLocalFolder(srcRoot.absolutePath, srcRoot.name, "$remoteName:", basePath, move)
         return FolderCopyResult(result.success, if (result.success) "OK" else result.message)
     }
 

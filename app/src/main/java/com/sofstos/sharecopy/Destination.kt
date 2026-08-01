@@ -3,7 +3,7 @@ package com.sofstos.sharecopy
 import org.json.JSONObject
 import java.util.UUID
 
-enum class DestType { SAF, MANUAL, SFTP }
+enum class DestType { SAF, MANUAL, SFTP, MEGA }
 
 data class Destination(
     val id: String = UUID.randomUUID().toString(),
@@ -15,12 +15,16 @@ data class Destination(
     val path: String? = null,
     // Для MANUAL: писать через "su" (root), а не напрямую
     val useRoot: Boolean = false,
-    // Для SFTP: параметры подключения (логин/пароль)
+    // Для SFTP (через rclone): параметры подключения (логин/пароль)
     val sftpHost: String? = null,
     val sftpPort: Int = 22,
     val sftpUser: String? = null,
     val sftpPassword: String? = null,
-    val sftpRemotePath: String? = null
+    val sftpRemotePath: String? = null,
+    // Для MEGA (через rclone): email + пароль аккаунта
+    val megaUser: String? = null,
+    val megaPassword: String? = null,
+    val megaRemotePath: String? = null
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
         put("id", id)
@@ -34,6 +38,9 @@ data class Destination(
         put("sftpUser", sftpUser ?: JSONObject.NULL)
         put("sftpPassword", sftpPassword ?: JSONObject.NULL)
         put("sftpRemotePath", sftpRemotePath ?: JSONObject.NULL)
+        put("megaUser", megaUser ?: JSONObject.NULL)
+        put("megaPassword", megaPassword ?: JSONObject.NULL)
+        put("megaRemotePath", megaRemotePath ?: JSONObject.NULL)
     }
 
     companion object {
@@ -48,7 +55,10 @@ data class Destination(
             sftpPort = o.optInt("sftpPort", 22),
             sftpUser = if (o.isNull("sftpUser")) null else o.optString("sftpUser"),
             sftpPassword = if (o.isNull("sftpPassword")) null else o.optString("sftpPassword"),
-            sftpRemotePath = if (o.isNull("sftpRemotePath")) null else o.optString("sftpRemotePath")
+            sftpRemotePath = if (o.isNull("sftpRemotePath")) null else o.optString("sftpRemotePath"),
+            megaUser = if (!o.has("megaUser") || o.isNull("megaUser")) null else o.optString("megaUser"),
+            megaPassword = if (!o.has("megaPassword") || o.isNull("megaPassword")) null else o.optString("megaPassword"),
+            megaRemotePath = if (!o.has("megaRemotePath") || o.isNull("megaRemotePath")) null else o.optString("megaRemotePath")
         )
     }
 }

@@ -33,7 +33,7 @@ object FolderOpenHelper {
                     addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
             }
-            DestType.SFTP -> null
+            DestType.SFTP, DestType.MEGA -> null
         }
     }
 

@@ -35,6 +35,7 @@ class DestinationAdapter(
             DestType.SAF -> "SAF: " + safDisplayPath(holder.itemView.context, item.treeUri)
             DestType.MANUAL -> if (item.useRoot) "Путь вручную (root): ${item.path}" else "Путь вручную: ${item.path}"
             DestType.SFTP -> "SFTP: ${item.sftpUser}@${item.sftpHost}:${item.sftpPort}${item.sftpRemotePath}"
+            DestType.MEGA -> "Mega: ${item.megaUser} → ${item.megaRemotePath}"
         }
         holder.itemView.setOnClickListener { onClick(item) }
         onLongClick?.let { cb ->

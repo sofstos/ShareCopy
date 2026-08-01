@@ -111,6 +111,10 @@ class MainActivity : AppCompatActivity() {
             dialog.dismiss()
             showSftpDialog(null)
         }
+        view.findViewById<TextView>(R.id.menuItemAddMega).setOnClickListener {
+            dialog.dismiss()
+            showMegaDialog(null)
+        }
         view.findViewById<TextView>(R.id.menuItemAllFilesAccess).setOnClickListener {
             dialog.dismiss()
             requestAllFilesAccess()
@@ -227,12 +231,13 @@ class MainActivity : AppCompatActivity() {
                     .show()
             }
             DestType.SFTP -> showSftpDialog(dest)
+            DestType.MEGA -> showMegaDialog(dest)
         }
     }
 
     /**
-     * Диалог добавления/редактирования SFTP-назначения. Перед сохранением проверяет
-     * соединение (в фоне) — если подключиться не удалось, диалог не закрывается и
+     * Диалог добавления/редактирования SFTP-назначения (через rclone). Перед сохранением
+     * проверяет соединение (в фоне) — если подключиться не удалось, диалог не закрывается и
      * показывается причина ошибки, чтобы не узнавать о неверном пароле/хосте только
      * в момент реальной передачи файла.
      */
@@ -278,28 +283,105 @@ class MainActivity : AppCompatActivity() {
                     return@setOnClickListener
                 }
 
+                val candidate = (existing ?: Destination(name = name, type = DestType.SFTP)).copy(
+                    name = name,
+                    type = DestType.SFTP,
+                    sftpHost = host,
+                    sftpPort = port,
+                    sftpUser = user,
+                    sftpPassword = password,
+                    sftpRemotePath = remotePath
+                )
+
                 Toast.makeText(this, R.string.sftp_testing, Toast.LENGTH_SHORT).show()
                 Thread {
-                    val result = SftpHelper.testConnection(host, port, user, password, remotePath)
+                    val remoteName = RcloneHelper.remoteName(candidate.id)
+                    val ensured = RcloneHelper.createOrReplaceRemote(
+                        remoteName, "sftp",
+                        mapOf("host" to host, "user" to user, "pass" to password, "port" to port.toString())
+                    )
+                    val testResult = if (ensured.success) RcloneHelper.testRemotePath("$remoteName:$remotePath") else ensured
                     runOnUiThread {
-                        if (result.success) {
-                            val base = existing ?: Destination(name = name, type = DestType.SFTP)
-                            val toSave = base.copy(
-                                name = name,
-                                type = DestType.SFTP,
-                                sftpHost = host,
-                                sftpPort = port,
-                                sftpUser = user,
-                                sftpPassword = password,
-                                sftpRemotePath = remotePath
-                            )
-                            if (existing != null) store.updateDestination(toSave) else store.addDestination(toSave)
+                        if (testResult.success) {
+                            if (existing != null) store.updateDestination(candidate) else store.addDestination(candidate)
                             refreshList()
                             dialog.dismiss()
                         } else {
                             Toast.makeText(
                                 this,
-                                getString(R.string.sftp_test_failed, result.message),
+                                getString(R.string.sftp_test_failed, testResult.message),
+                                Toast.LENGTH_LONG
+                            ).show()
+                        }
+                    }
+                }.start()
+            }
+        }
+        dialog.show()
+    }
+
+    /** Диалог добавления/редактирования Mega-назначения (через rclone), с той же логикой проверки перед сохранением. */
+    private fun showMegaDialog(existing: Destination?) {
+        val view = layoutInflater.inflate(R.layout.dialog_add_mega, null)
+        val editName = view.findViewById<EditText>(R.id.editMegaName)
+        val editUser = view.findViewById<EditText>(R.id.editMegaUser)
+        val editPassword = view.findViewById<EditText>(R.id.editMegaPassword)
+        val editRemotePath = view.findViewById<EditText>(R.id.editMegaRemotePath)
+
+        existing?.let {
+            editName.setText(it.name)
+            editUser.setText(it.megaUser)
+            editPassword.setText(it.megaPassword)
+            editRemotePath.setText(it.megaRemotePath)
+        }
+
+        val builder = AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_add_mega_title)
+            .setView(view)
+            .setPositiveButton(R.string.btn_save, null)
+            .setNegativeButton(R.string.btn_cancel, null)
+        if (existing != null) {
+            builder.setNeutralButton(R.string.btn_delete) { _, _ -> confirmDelete(existing) }
+        }
+        val dialog = builder.create()
+
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                val user = editUser.text.toString().trim()
+                val password = editPassword.text.toString()
+                val remotePath = editRemotePath.text.toString().trim().ifBlank { "/" }
+                val name = editName.text.toString().ifBlank { user }
+
+                if (user.isBlank()) {
+                    Toast.makeText(this, R.string.hint_mega_user, Toast.LENGTH_SHORT).show()
+                    return@setOnClickListener
+                }
+
+                val candidate = (existing ?: Destination(name = name, type = DestType.MEGA)).copy(
+                    name = name,
+                    type = DestType.MEGA,
+                    megaUser = user,
+                    megaPassword = password,
+                    megaRemotePath = remotePath
+                )
+
+                Toast.makeText(this, R.string.mega_testing, Toast.LENGTH_SHORT).show()
+                Thread {
+                    val remoteName = RcloneHelper.remoteName(candidate.id)
+                    val ensured = RcloneHelper.createOrReplaceRemote(
+                        remoteName, "mega",
+                        mapOf("user" to user, "pass" to password)
+                    )
+                    val testResult = if (ensured.success) RcloneHelper.testRemotePath("$remoteName:$remotePath") else ensured
+                    runOnUiThread {
+                        if (testResult.success) {
+                            if (existing != null) store.updateDestination(candidate) else store.addDestination(candidate)
+                            refreshList()
+                            dialog.dismiss()
+                        } else {
+                            Toast.makeText(
+                                this,
+                                getString(R.string.mega_test_failed, testResult.message),
                                 Toast.LENGTH_LONG
                             ).show()
                         }

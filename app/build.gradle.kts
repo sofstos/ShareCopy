@@ -11,8 +11,8 @@ android {
         applicationId = "com.sofstos.sharecopy"
         minSdk = 30
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3"
+        versionCode = 4
+        versionName = "0.4"
     }
 
     buildTypes {
@@ -43,11 +43,8 @@ dependencies {
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
     implementation("androidx.leanback:leanback:1.0.0")
 
-    // SFTP-клиент для удалённых папок назначения
-    implementation("com.hierynomus:sshj:0.38.0")
-    // У Android есть встроенный урезанный провайдер с именем "BC" (используется системой),
-    // которому не хватает части алгоритмов. Полноценный BouncyCastle подключаем и явно
-    // ЗАМЕНЯЕМ им системную заглушку (см. ShareCopyApp) — просто добавить библиотеку
-    // недостаточно, т.к. системный "BC" перехватывает запросы первым.
-    implementation("org.bouncycastle:bcprov-jdk18on:1.78.1")
+    // Rclone (librclone.aar) — собирается в CI на этапе "Build librclone.aar" и кладётся сюда.
+    // Заменяет прежнюю самописную реализацию SFTP (sshj) и добавляет Mega + задел на другие
+    // облачные бэкенды rclone на будущее.
+    implementation(files("libs/librclone.aar"))
 }

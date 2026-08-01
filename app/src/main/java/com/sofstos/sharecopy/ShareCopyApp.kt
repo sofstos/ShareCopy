@@ -1,27 +1,26 @@
 package com.sofstos.sharecopy
 
 import android.app.Application
-import org.bouncycastle.jce.provider.BouncyCastleProvider
-import java.security.Security
+import android.system.Os
+import java.io.File
 
 class ShareCopyApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // ВАЖНО: у Android уже есть встроенный провайдер с именем "BC" (урезанная системная
-        // версия BouncyCastle, используется платформой для legacy-нужд) — он зарегистрирован
-        // всегда, ещё до запуска нашего кода. Поэтому просто добавить полноценный BC
-        // недостаточно: проверка "провайдер BC уже есть? тогда не добавляем" всегда сработает
-        // не в нашу пользу, а библиотеки вроде sshj, которые явно запрашивают провайдер по
-        // имени "BC", будут и дальше получать урезанную системную версию, в которой не хватает
-        // части алгоритмов (ловили ошибки то на X25519, то на банальном SHA-256).
-        //
-        // Решение — явно УДАЛИТЬ системную заглушку и поставить на её место полноценный BC.
+        // rclone (через librclone) по умолчанию ищет свой конфиг-файл в домашней директории
+        // пользователя ($HOME/.config/rclone/rclone.conf) — на Android переменная HOME обычно
+        // не задана процессу приложения, так что нужно явно указать rclone, где хранить
+        // конфиг с удалёнными "remotes" (SFTP/Mega/...), причём именно как настоящую
+        // переменную окружения ОС (не просто System.setProperty — Go-рантайм читает её через
+        // обычный getenv на уровне libc, поэтому используется android.system.Os.setenv).
         try {
-            Security.removeProvider("BC")
-            Security.insertProviderAt(BouncyCastleProvider(), 1)
+            val configDir = File(filesDir, "rclone")
+            if (!configDir.exists()) configDir.mkdirs()
+            val configFile = File(configDir, "rclone.conf")
+            Os.setenv("RCLONE_CONFIG", configFile.absolutePath, true)
         } catch (e: Exception) {
-            // Если по какой-то причине не получилось — не роняем приложение,
-            // просто SFTP-соединения с "капризными" алгоритмами могут не заработать.
+            // Не критично для запуска приложения — просто настройки удалённых папок (rclone)
+            // не будут сохраняться между запусками, если это не сработало.
         }
     }
 }

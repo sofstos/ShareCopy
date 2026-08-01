@@ -82,4 +82,12 @@
     <string name="dest_action_delete">Удалить</string>
     <string name="error_open_folder_failed">Не удалось открыть папку: %1$s</string>
     <string name="error_fixed_fm_not_set">Сначала выбери фиксированный файловый менеджер в меню ☰</string>
+
+    <string name="btn_add_mega">Добавить Mega-папку</string>
+    <string name="dialog_add_mega_title">Удалённая папка (Mega)</string>
+    <string name="hint_mega_user">Email аккаунта Mega</string>
+    <string name="hint_mega_password">Пароль</string>
+    <string name="hint_mega_remote_path">Путь на Mega (например /Photos)</string>
+    <string name="mega_testing">Проверка соединения с Mega…</string>
+    <string name="mega_test_failed">Не удалось подключиться: %1$s</string>
 </resources>
