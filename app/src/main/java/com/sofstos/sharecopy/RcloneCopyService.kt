@@ -48,11 +48,13 @@ class RcloneCopyService : Service() {
 
         startForeground(FOREGROUND_NOTIF_ID, buildProgressNotification(opWord, destName))
         val resultNotifId = FOREGROUND_NOTIF_ID + startId
+        Logger.log(this, "service", "start op=$opWord dest=$destName type=${dest?.type} isFolder=${intent.getBooleanExtra(EXTRA_IS_FOLDER, false)}")
 
         val stagingDirPath = intent.getStringExtra(EXTRA_STAGING_DIR)
 
         Thread {
             val (success, resultText) = runCopy(intent, dest, move, opWord, destName)
+            Logger.log(this, "service", "done success=$success text=$resultText")
 
             if (success) VibrationHelper.success(applicationContext) else VibrationHelper.error(applicationContext)
 
@@ -94,7 +96,7 @@ class RcloneCopyService : Service() {
 
         val stagingDir = File(stagingDirPath)
         val files = fileNames.map { File(stagingDir, it) }.filter { it.exists() }
-        val result = FileCopyEngine.uploadStagedFiles(files, dest, subfolder)
+        val result = FileCopyEngine.uploadStagedFiles(applicationContext, files, dest, subfolder)
 
         val success = result.total > 0 && result.succeeded == result.total
         val text = when {

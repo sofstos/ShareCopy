@@ -1,5 +1,6 @@
 package com.sofstos.sharecopy
 
+import android.content.Context
 import org.json.JSONObject
 import org.rclone.gomobile.Gomobile
 
@@ -26,13 +27,15 @@ object RcloneHelper {
 
     data class RpcResult(val success: Boolean, val json: JSONObject?, val message: String)
 
-    fun call(method: String, params: JSONObject = JSONObject()): RpcResult {
+    fun call(context: Context, method: String, params: JSONObject = JSONObject()): RpcResult {
         ensureInit()
+        Logger.log(context, "rclone", "→ $method $params")
         return try {
             val result = Gomobile.rcloneRPC(method, params.toString())
             val output = result.output ?: "{}"
             val status = result.status.toInt()
             val json = try { JSONObject(output) } catch (e: Exception) { null }
+            Logger.log(context, "rclone", "← $method status=$status body=$output")
             if (status in 200..299) {
                 RpcResult(true, json, "OK")
             } else {
@@ -40,6 +43,7 @@ object RcloneHelper {
                 RpcResult(false, json, errMsg)
             }
         } catch (e: Exception) {
+            Logger.log(context, "rclone", "✗ $method exception=${e.message}")
             RpcResult(false, null, e.message ?: e.javaClass.simpleName)
         }
     }
@@ -48,9 +52,9 @@ object RcloneHelper {
     fun remoteName(destId: String): String = "d" + destId.replace(Regex("[^A-Za-z0-9]"), "")
 
     /** Пересоздаёт remote с именем [name] типа [type] и параметрами [params] (пароли будут автоматически "обфусцированы" rclone). */
-    fun createOrReplaceRemote(name: String, type: String, params: Map<String, String>): RpcResult {
+    fun createOrReplaceRemote(context: Context, name: String, type: String, params: Map<String, String>): RpcResult {
         // Игнорируем результат удаления — remote может не существовать, это нормально.
-        call("config/delete", JSONObject().apply { put("name", name) })
+        call(context, "config/delete", JSONObject().apply { put("name", name) })
 
         val paramsJson = JSONObject()
         for ((k, v) in params) paramsJson.put(k, v)
@@ -64,27 +68,27 @@ object RcloneHelper {
                 put("nonInteractive", true)
             })
         }
-        return call("config/create", body)
+        return call(context, "config/create", body)
     }
 
     /** Проверяет, что remote реально доступен — пробует создать/проверить целевую папку. */
-    fun testRemotePath(fsSpec: String): RpcResult {
+    fun testRemotePath(context: Context, fsSpec: String): RpcResult {
         val body = JSONObject().apply {
             put("fs", fsSpec)
             put("remote", "")
         }
         // mkdir идемпотентен — если папка уже есть, ошибки не будет; заодно проверяет доступ на запись.
-        return call("operations/mkdir", body)
+        return call(context, "operations/mkdir", body)
     }
 
     /** Список имён файлов/папок в [dir] (без рекурсии) — для подбора уникального имени при копировании. */
-    fun listNames(fsSpec: String, dir: String): Set<String> {
+    fun listNames(context: Context, fsSpec: String, dir: String): Set<String> {
         val body = JSONObject().apply {
             put("fs", fsSpec)
             put("remote", dir)
             put("opt", JSONObject().apply { put("recurse", false) })
         }
-        val result = call("operations/list", body)
+        val result = call(context, "operations/list", body)
         if (!result.success || result.json == null) return emptySet()
         val list = result.json.optJSONArray("list") ?: return emptySet()
         val names = mutableSetOf<String>()
@@ -95,8 +99,8 @@ object RcloneHelper {
         return names
     }
 
-    fun uniqueName(fsSpec: String, dir: String, name: String): String {
-        val existing = listNames(fsSpec, dir)
+    fun uniqueName(context: Context, fsSpec: String, dir: String, name: String): String {
+        val existing = listNames(context, fsSpec, dir)
         if (name !in existing) return name
         val dot = name.lastIndexOf('.')
         val base = if (dot > 0) name.substring(0, dot) else name
@@ -107,20 +111,21 @@ object RcloneHelper {
     }
 
     /** Копирует один локальный файл [localDir]/[localName] в [dstFs]:[dstDir]/[localName] (с подбором уникального имени). */
-    fun copyLocalFile(localDir: String, localName: String, dstFs: String, dstDir: String): RpcResult {
-        val target = uniqueName(dstFs, dstDir, localName)
+    fun copyLocalFile(context: Context, localDir: String, localName: String, dstFs: String, dstDir: String): RpcResult {
+        val target = uniqueName(context, dstFs, dstDir, localName)
         val body = JSONObject().apply {
             put("srcFs", localDir)
             put("srcRemote", localName)
             put("dstFs", dstFs)
             put("dstRemote", if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target")
         }
-        val result = call("operations/copyfile", body)
+        val result = call(context, "operations/copyfile", body)
         if (!result.success) return result
 
         // Некоторые бэкенды (замечено на Mega) иногда рапортуют успех (код 200), хотя по факту
         // файл не появляется на удалённой стороне — перестраховываемся явной проверкой листингом.
-        val nowThere = listNames(dstFs, dstDir).contains(target)
+        val nowThere = listNames(context, dstFs, dstDir).contains(target)
+        Logger.log(context, "rclone", "verify upload of '$target' in '$dstFs$dstDir' -> found=$nowThere")
         return if (nowThere) result
         else RpcResult(
             false, result.json,
@@ -129,14 +134,14 @@ object RcloneHelper {
     }
 
     /** Рекурсивно копирует (или перемещает, что удаляет источник) целую локальную папку в [dstFs]:[dstDir]/<имя папки>. */
-    fun copyLocalFolder(localFolderPath: String, folderName: String, dstFs: String, dstDir: String, move: Boolean): RpcResult {
-        val target = uniqueName(dstFs, dstDir, folderName)
+    fun copyLocalFolder(context: Context, localFolderPath: String, folderName: String, dstFs: String, dstDir: String, move: Boolean): RpcResult {
+        val target = uniqueName(context, dstFs, dstDir, folderName)
         val fullDstDir = if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target"
         // dstFs приходит в форме "remoteName:" — просто дописываем путь папки назначения.
         val body = JSONObject().apply {
             put("srcFs", localFolderPath)
             put("dstFs", dstFs + fullDstDir)
         }
-        return call(if (move) "sync/move" else "sync/copy", body)
+        return call(context, if (move) "sync/move" else "sync/copy", body)
     }
 }

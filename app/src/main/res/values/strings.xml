@@ -100,4 +100,10 @@
     <string name="preparing_files">Подготовка файлов…</string>
     <string name="error_prepare_files_failed">Не удалось подготовить ни один файл для отправки</string>
     <string name="toast_some_files_prepare_failed">Часть файлов не удалось прочитать — остальные копируются</string>
+
+    <string name="menu_log_folder">Папка логов</string>
+    <string name="dialog_log_folder_title">Папка для диагностических логов</string>
+    <string name="hint_log_folder_path">Путь (например /storage/emulated/0/ShareCopyLogs)</string>
+    <string name="log_folder_not_set">не задана</string>
+    <string name="btn_disable">Отключить</string>
 </resources>

@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.TextView
@@ -106,6 +107,10 @@ class MainActivity : AppCompatActivity() {
         val currentFmLabel = store.getFixedFileManagerLabel() ?: getString(R.string.fixed_fm_not_set)
         menuFm.text = getString(R.string.menu_pick_file_manager) + ": " + currentFmLabel
 
+        val menuLogFolder = view.findViewById<TextView>(R.id.menuItemLogFolder)
+        val currentLogFolder = store.getLogFolderPath() ?: getString(R.string.log_folder_not_set)
+        menuLogFolder.text = getString(R.string.menu_log_folder) + ": " + currentLogFolder
+
         val checkVibration = view.findViewById<CheckBox>(R.id.menuCheckVibration)
         checkVibration.isChecked = store.isVibrationEnabled()
         checkVibration.setOnCheckedChangeListener { _, checked -> store.setVibrationEnabled(checked) }
@@ -137,6 +142,10 @@ class MainActivity : AppCompatActivity() {
         menuFm.setOnClickListener {
             dialog.dismiss()
             showFileManagerPickerDialog()
+        }
+        menuLogFolder.setOnClickListener {
+            dialog.dismiss()
+            showLogFolderDialog()
         }
 
         dialog.show()
@@ -305,17 +314,19 @@ class MainActivity : AppCompatActivity() {
                     sftpRemotePath = remotePath
                 )
 
-                // Блокируем кнопку на время проверки — иначе повторные нажатия (пока идёт
-                // фоновая проверка) создают несколько одинаковых записей подряд.
+                // Блокируем кнопку И закрытие диалога (свайп назад/тап мимо) на время проверки —
+                // иначе повторные нажатия создают несколько одинаковых записей, а закрытие
+                // диалога до завершения проверки выглядит так, будто ничего не произошло.
                 saveButton.isEnabled = false
-                Toast.makeText(this, R.string.sftp_testing, Toast.LENGTH_SHORT).show()
+                dialog.setCancelable(false)
+                dialog.setTitle(getString(R.string.dialog_add_sftp_title) + " — " + getString(R.string.sftp_testing))
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
                     val ensured = RcloneHelper.createOrReplaceRemote(
-                        remoteName, "sftp",
+                        this, remoteName, "sftp",
                         mapOf("host" to host, "user" to user, "pass" to password, "port" to port.toString())
                     )
-                    val testResult = if (ensured.success) RcloneHelper.testRemotePath("$remoteName:$remotePath") else ensured
+                    val testResult = if (ensured.success) RcloneHelper.testRemotePath(this, "$remoteName:$remotePath") else ensured
                     runOnUiThread {
                         if (testResult.success) {
                             if (existing != null) store.updateDestination(candidate) else store.addDestination(candidate)
@@ -323,6 +334,8 @@ class MainActivity : AppCompatActivity() {
                             dialog.dismiss()
                         } else {
                             saveButton.isEnabled = true
+                            dialog.setCancelable(true)
+                            dialog.setTitle(R.string.dialog_add_sftp_title)
                             Toast.makeText(
                                 this,
                                 getString(R.string.sftp_test_failed, testResult.message),
@@ -383,14 +396,15 @@ class MainActivity : AppCompatActivity() {
                 )
 
                 saveButton.isEnabled = false
-                Toast.makeText(this, R.string.mega_testing, Toast.LENGTH_SHORT).show()
+                dialog.setCancelable(false)
+                dialog.setTitle(getString(R.string.dialog_add_mega_title) + " — " + getString(R.string.mega_testing))
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
                     val ensured = RcloneHelper.createOrReplaceRemote(
-                        remoteName, "mega",
+                        this, remoteName, "mega",
                         mapOf("user" to user, "pass" to password)
                     )
-                    val testResult = if (ensured.success) RcloneHelper.testRemotePath("$remoteName:$remotePath") else ensured
+                    val testResult = if (ensured.success) RcloneHelper.testRemotePath(this, "$remoteName:$remotePath") else ensured
                     runOnUiThread {
                         if (testResult.success) {
                             if (existing != null) store.updateDestination(candidate) else store.addDestination(candidate)
@@ -398,6 +412,8 @@ class MainActivity : AppCompatActivity() {
                             dialog.dismiss()
                         } else {
                             saveButton.isEnabled = true
+                            dialog.setCancelable(true)
+                            dialog.setTitle(R.string.dialog_add_mega_title)
                             Toast.makeText(
                                 this,
                                 getString(R.string.mega_test_failed, testResult.message),
@@ -415,13 +431,23 @@ class MainActivity : AppCompatActivity() {
         val view = layoutInflater.inflate(R.layout.dialog_destination_actions, null)
         val dialog = AlertDialog.Builder(this).setTitle(dest.name).setView(view).create()
 
-        view.findViewById<TextView>(R.id.actionOpenSystem).setOnClickListener {
-            dialog.dismiss()
-            openInSystem(dest)
-        }
-        view.findViewById<TextView>(R.id.actionOpenFixedFm).setOnClickListener {
-            dialog.dismiss()
-            openInFixedFileManager(dest)
+        val canOpenLocally = dest.type == DestType.SAF || dest.type == DestType.MANUAL
+        val openSystemView = view.findViewById<TextView>(R.id.actionOpenSystem)
+        val openFixedFmView = view.findViewById<TextView>(R.id.actionOpenFixedFm)
+
+        if (canOpenLocally) {
+            openSystemView.setOnClickListener {
+                dialog.dismiss()
+                openInSystem(dest)
+            }
+            openFixedFmView.setOnClickListener {
+                dialog.dismiss()
+                openInFixedFileManager(dest)
+            }
+        } else {
+            // SFTP/Mega — удалённое хранилище, локальным файловым менеджером его не открыть.
+            openSystemView.visibility = View.GONE
+            openFixedFmView.visibility = View.GONE
         }
         view.findViewById<TextView>(R.id.actionDelete).setOnClickListener {
             dialog.dismiss()
@@ -432,13 +458,28 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openInSystem(dest: Destination) {
-        val intent = FolderOpenHelper.buildOpenFolderIntent(this, dest)
-        if (intent == null) {
+        val intents = FolderOpenHelper.buildAllOpenFolderIntents(this, dest)
+        if (intents.isEmpty()) {
             Toast.makeText(this, getString(R.string.error_open_folder_failed, dest.name), Toast.LENGTH_LONG).show()
             return
         }
         try {
-            startActivity(Intent.createChooser(intent, dest.name))
+            val chooser = Intent.createChooser(intents.first(), dest.name)
+            if (intents.size > 1) {
+                val extraIntents = mutableListOf<Intent>()
+                for (i in 1 until intents.size) {
+                    val resolved = packageManager.queryIntentActivities(intents[i], android.content.pm.PackageManager.MATCH_DEFAULT_ONLY)
+                    for (ri in resolved) {
+                        extraIntents.add(Intent(intents[i]).apply {
+                            setClassName(ri.activityInfo.packageName, ri.activityInfo.name)
+                        })
+                    }
+                }
+                if (extraIntents.isNotEmpty()) {
+                    chooser.putExtra(Intent.EXTRA_INITIAL_INTENTS, extraIntents.toTypedArray())
+                }
+            }
+            startActivity(chooser)
         } catch (e: Exception) {
             Toast.makeText(this, getString(R.string.error_open_folder_failed, e.message ?: ""), Toast.LENGTH_LONG).show()
         }
@@ -477,6 +518,23 @@ class MainActivity : AppCompatActivity() {
                 store.setFixedFileManager(pkg, label)
                 Toast.makeText(this, label, Toast.LENGTH_SHORT).show()
             }
+            .setNegativeButton(R.string.btn_cancel, null)
+            .show()
+    }
+
+    private fun showLogFolderDialog() {
+        val input = EditText(this).apply {
+            hint = getString(R.string.hint_log_folder_path)
+            setText(store.getLogFolderPath() ?: "")
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.dialog_log_folder_title)
+            .setView(input)
+            .setPositiveButton(R.string.btn_save) { _, _ ->
+                val path = input.text.toString().trim()
+                store.setLogFolderPath(path.ifBlank { null })
+            }
+            .setNeutralButton(R.string.btn_disable) { _, _ -> store.setLogFolderPath(null) }
             .setNegativeButton(R.string.btn_cancel, null)
             .show()
     }

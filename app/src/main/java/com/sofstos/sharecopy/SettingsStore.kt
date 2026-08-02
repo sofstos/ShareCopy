@@ -64,11 +64,16 @@ class SettingsStore(context: Context) {
             .apply()
     }
 
+    // Папка для диагностических логов (см. Logger) — путь вручную, задаётся в меню ☰
+    fun getLogFolderPath(): String? = prefs.getString(KEY_LOG_FOLDER, null)
+    fun setLogFolderPath(path: String?) = prefs.edit().putString(KEY_LOG_FOLDER, path).apply()
+
     companion object {
         private const val KEY_DESTINATIONS = "destinations"
         private const val KEY_LAST_MOVE = "last_move_flag"
         private const val KEY_VIBRATION = "vibration_enabled"
         private const val KEY_FIXED_FM_PKG = "fixed_fm_package"
         private const val KEY_FIXED_FM_LABEL = "fixed_fm_label"
+        private const val KEY_LOG_FOLDER = "log_folder_path"
     }
 }

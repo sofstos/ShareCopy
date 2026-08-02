@@ -157,7 +157,13 @@ object FileCopyEngine {
                 val basePath = destination.sftpRemotePath?.trimEnd('/')?.ifBlank { "/" } ?: "/"
                 Triple(
                     "sftp",
-                    mapOf("host" to host, "user" to user, "pass" to pass, "port" to destination.sftpPort.toString()),
+                    mapOf(
+                        "host" to host, "user" to user, "pass" to pass, "port" to destination.sftpPort.toString(),
+                        // Многие SFTP-серверы (OpenWrt, нередко и Windows OpenSSH) не поддерживают
+                        // изменение времени модификации файла после записи — rclone по умолчанию
+                        // пытается это сделать и считает всю операцию проваленной при отказе.
+                        "set_modtime" to "false"
+                    ),
                     basePath
                 )
             }
@@ -179,12 +185,12 @@ object FileCopyEngine {
      * реальные файлы (см. ShareTargetActivity) — так сервис копирования не зависит от разрешений
      * на исходный content:// URI, которые Android может отозвать после закрытия экрана-источника.
      */
-    fun uploadStagedFiles(files: List<File>, destination: Destination, subfolderName: String?): CopyResult {
+    fun uploadStagedFiles(context: Context, files: List<File>, destination: Destination, subfolderName: String?): CopyResult {
         val (type, params, basePath) = rcloneBackendInfo(destination)
             ?: return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (не настроены параметры подключения)" })
 
         val remoteName = RcloneHelper.remoteName(destination.id)
-        val ensured = RcloneHelper.createOrReplaceRemote(remoteName, type, params)
+        val ensured = RcloneHelper.createOrReplaceRemote(context, remoteName, type, params)
         if (!ensured.success) {
             return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (${ensured.message})" })
         }
@@ -200,7 +206,7 @@ object FileCopyEngine {
                 errors.add("${file.name} (внутренняя ошибка пути)")
                 continue
             }
-            val result = RcloneHelper.copyLocalFile(dir, file.name, dstFs, dstDir)
+            val result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFs, dstDir)
             if (result.success) succeeded++ else errors.add("${file.name} (${result.message})")
         }
         return CopyResult(files.size, succeeded, emptyList(), errors)
@@ -209,7 +215,7 @@ object FileCopyEngine {
     private fun writeToRclone(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
         val (type, params, basePath) = rcloneBackendInfo(destination) ?: return false
         val remoteName = RcloneHelper.remoteName(destination.id)
-        val ensured = RcloneHelper.createOrReplaceRemote(remoteName, type, params)
+        val ensured = RcloneHelper.createOrReplaceRemote(context, remoteName, type, params)
         if (!ensured.success) return false
 
         val dstFs = "$remoteName:"
@@ -225,7 +231,7 @@ object FileCopyEngine {
                 FileOutputStream(tempFile).use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
             } ?: return false
 
-            val result = RcloneHelper.copyLocalFile(tempDir.absolutePath, name, dstFs, dstDir)
+            val result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFs, dstDir)
             result.success
         } finally {
             tempDir.deleteRecursively()
@@ -280,14 +286,14 @@ object FileCopyEngine {
             when (destination.type) {
                 DestType.MANUAL -> copyFolderManual(sourcePath.trimEnd('/'), srcName, destination, sourceUseRoot, move)
                 DestType.SAF -> copyFolderToSaf(context, srcFile, srcName, destination, sourceUseRoot, move)
-                DestType.SFTP, DestType.MEGA -> copyFolderToRclone(srcFile, destination, sourceUseRoot, move)
+                DestType.SFTP, DestType.MEGA -> copyFolderToRclone(context, srcFile, destination, sourceUseRoot, move)
             }
         } catch (e: Exception) {
             FolderCopyResult(false, e.message ?: "Неизвестная ошибка")
         }
     }
 
-    private fun copyFolderToRclone(srcRoot: File, destination: Destination, sourceUseRoot: Boolean, move: Boolean): FolderCopyResult {
+    private fun copyFolderToRclone(context: Context, srcRoot: File, destination: Destination, sourceUseRoot: Boolean, move: Boolean): FolderCopyResult {
         if (sourceUseRoot) {
             return FolderCopyResult(
                 false,
@@ -300,10 +306,10 @@ object FileCopyEngine {
         val (type, params, basePath) = rcloneBackendInfo(destination)
             ?: return FolderCopyResult(false, "Не настроены параметры подключения")
         val remoteName = RcloneHelper.remoteName(destination.id)
-        val ensured = RcloneHelper.createOrReplaceRemote(remoteName, type, params)
+        val ensured = RcloneHelper.createOrReplaceRemote(context, remoteName, type, params)
         if (!ensured.success) return FolderCopyResult(false, "Не удалось подключиться: ${ensured.message}")
 
-        val result = RcloneHelper.copyLocalFolder(srcRoot.absolutePath, srcRoot.name, "$remoteName:", basePath, move)
+        val result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, "$remoteName:", basePath, move)
         return FolderCopyResult(result.success, if (result.success) "OK" else result.message)
     }
 
