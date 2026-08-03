@@ -12,10 +12,18 @@ import org.rclone.gomobile.Gomobile
  * rclone, мы каждый раз перед использованием пересоздаём remote под актуальными параметрами
  * из нашего собственного хранилища (SettingsStore/Destination) — так исключается риск
  * рассинхронизации, если пользователь отредактировал пароль/хост в нашем UI.
+ *
+ * ВАЖНО про параллелизм: если запустить два копирования одновременно (например, поделиться
+ * файлом на один сервер, а через секунду — на другой), librclone может не быть безопасен для
+ * настоящих одновременных вызовов из разных потоков — на практике это приводило к перепутанным
+ * логам и к ошибкам вида "object not found" на ровном месте. Поэтому ВСЕ вызовы rcloneRPC
+ * строго сериализуются через общий lock — параллельные операции просто встают в очередь,
+ * а не выполняются по-настоящему одновременно.
  */
 object RcloneHelper {
 
     @Volatile private var initialized = false
+    private val rpcLock = Any()
 
     @Synchronized
     private fun ensureInit() {
@@ -29,22 +37,24 @@ object RcloneHelper {
 
     fun call(context: Context, method: String, params: JSONObject = JSONObject()): RpcResult {
         ensureInit()
-        Logger.log(context, "rclone", "→ $method $params")
-        return try {
-            val result = Gomobile.rcloneRPC(method, params.toString())
-            val output = result.output ?: "{}"
-            val status = result.status.toInt()
-            val json = try { JSONObject(output) } catch (e: Exception) { null }
-            Logger.log(context, "rclone", "← $method status=$status body=$output")
-            if (status in 200..299) {
-                RpcResult(true, json, "OK")
-            } else {
-                val errMsg = json?.optString("error")?.takeIf { it.isNotBlank() } ?: output
-                RpcResult(false, json, errMsg)
+        synchronized(rpcLock) {
+            Logger.log(context, "rclone", "→ $method $params")
+            return try {
+                val result = Gomobile.rcloneRPC(method, params.toString())
+                val output = result.output ?: "{}"
+                val status = result.status.toInt()
+                val json = try { JSONObject(output) } catch (e: Exception) { null }
+                Logger.log(context, "rclone", "← $method status=$status body=$output")
+                if (status in 200..299) {
+                    RpcResult(true, json, "OK")
+                } else {
+                    val errMsg = json?.optString("error")?.takeIf { it.isNotBlank() } ?: output
+                    RpcResult(false, json, errMsg)
+                }
+            } catch (e: Exception) {
+                Logger.log(context, "rclone", "✗ $method exception=${e.message}")
+                RpcResult(false, null, e.message ?: e.javaClass.simpleName)
             }
-        } catch (e: Exception) {
-            Logger.log(context, "rclone", "✗ $method exception=${e.message}")
-            RpcResult(false, null, e.message ?: e.javaClass.simpleName)
         }
     }
 
@@ -110,6 +120,16 @@ object RcloneHelper {
         return "$base ($i)$ext"
     }
 
+    /**
+     * "_config": {"Inplace": true} отключает временные .partial-файлы и переименование после
+     * загрузки (стандартное поведение rclone) — пишем сразу под финальным именем. Это убирает
+     * целый класс проблем с "осиротевшими" .partial-файлами на серверах, которые не до конца
+     * поддерживают rename/переименование (замечено на OpenWrt).
+     */
+    private fun inplaceConfig(): JSONObject = JSONObject().apply {
+        put("_config", JSONObject().apply { put("Inplace", true) })
+    }
+
     /** Копирует один локальный файл [localDir]/[localName] в [dstFs]:[dstDir]/[localName] (с подбором уникального имени). */
     fun copyLocalFile(context: Context, localDir: String, localName: String, dstFs: String, dstDir: String): RpcResult {
         val target = uniqueName(context, dstFs, dstDir, localName)
@@ -119,6 +139,7 @@ object RcloneHelper {
             put("dstFs", dstFs)
             put("dstRemote", if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target")
         }
+        mergeInto(body, inplaceConfig())
         val result = call(context, "operations/copyfile", body)
         if (!result.success) return result
 
@@ -142,6 +163,11 @@ object RcloneHelper {
             put("srcFs", localFolderPath)
             put("dstFs", dstFs + fullDstDir)
         }
+        mergeInto(body, inplaceConfig())
         return call(context, if (move) "sync/move" else "sync/copy", body)
+    }
+
+    private fun mergeInto(target: JSONObject, extra: JSONObject) {
+        extra.keys().forEach { key -> target.put(key, extra.get(key)) }
     }
 }
