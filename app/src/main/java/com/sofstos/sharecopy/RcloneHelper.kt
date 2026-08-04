@@ -33,7 +33,7 @@ object RcloneHelper {
 
     @Volatile private var initialized = false
     private val rpcLock = Any()
-    private const val CALL_TIMEOUT_MS = 60_000L
+    private const val CALL_TIMEOUT_MS = 10 * 60_000L // 10 минут — слабые устройства (роутеры) на больших файлах могут быть медленными, а операция теперь всё равно идёт в фоне и не блокирует экран
 
     @Synchronized
     private fun ensureInit() {
