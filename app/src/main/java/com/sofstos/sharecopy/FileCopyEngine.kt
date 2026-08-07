@@ -148,7 +148,7 @@ object FileCopyEngine {
     }
 
     /** Общие параметры подключения rclone (тип бэкенда, параметры, базовый путь на удалённом хранилище) для SFTP/MEGA. */
-    private fun rcloneBackendInfo(destination: Destination): Triple<String, Map<String, String>, String>? {
+    fun rcloneBackendInfo(destination: Destination): Triple<String, Map<String, String>, String>? {
         return when (destination.type) {
             DestType.SFTP -> {
                 val host = destination.sftpHost ?: return null

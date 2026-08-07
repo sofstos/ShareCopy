@@ -322,10 +322,8 @@ class MainActivity : AppCompatActivity() {
                 dialog.setTitle(getString(R.string.dialog_add_sftp_title) + " — " + getString(R.string.sftp_testing))
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
-                    val ensured = RcloneHelper.createOrReplaceRemote(
-                        this, remoteName, "sftp",
-                        mapOf("host" to host, "user" to user, "pass" to password, "port" to port.toString())
-                    )
+                    val (type, params, _) = FileCopyEngine.rcloneBackendInfo(candidate)!!
+                    val ensured = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params)
                     val testResult = if (ensured.success) RcloneHelper.testRemotePath(this, "$remoteName:$remotePath") else ensured
                     runOnUiThread {
                         if (testResult.success) {
@@ -400,10 +398,8 @@ class MainActivity : AppCompatActivity() {
                 dialog.setTitle(getString(R.string.dialog_add_mega_title) + " — " + getString(R.string.mega_testing))
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
-                    val ensured = RcloneHelper.createOrReplaceRemote(
-                        this, remoteName, "mega",
-                        mapOf("user" to user, "pass" to password)
-                    )
+                    val (type, params, _) = FileCopyEngine.rcloneBackendInfo(candidate)!!
+                    val ensured = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params)
                     val testResult = if (ensured.success) RcloneHelper.testRemotePath(this, "$remoteName:$remotePath") else ensured
                     runOnUiThread {
                         if (testResult.success) {
