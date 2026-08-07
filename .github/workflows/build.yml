@@ -36,7 +36,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: app/libs/librclone.aar
-          key: librclone-aar-v1
+          key: librclone-aar-v2-arm64only-stripped
 
       - name: Build librclone.aar (Go + gomobile + NDK) — diagnostic stage, не ломает основную сборку
         if: steps.cache-librclone.outputs.cache-hit != 'true'
@@ -64,9 +64,10 @@ jobs:
             go get -tool golang.org/x/mobile/cmd/gobind
             go get -tool golang.org/x/mobile/cmd/gomobile
 
-            echo "=== Building librclone.aar (arm64 + arm only, чтобы не раздувать время сборки и размер) ==="
+            echo "=== Building librclone.aar (только arm64 — современные устройства все на нём; -s -w чистят отладочную информацию) ==="
             mkdir -p "$GITHUB_WORKSPACE/app/libs"
-            gomobile bind -v -target=android/arm64,android/arm -androidapi 30 \
+            gomobile bind -v -target=android/arm64 -androidapi 30 \
+              -ldflags="-s -w" \
               -javapkg=org.rclone \
               -o "$GITHUB_WORKSPACE/app/libs/librclone.aar" \
               github.com/rclone/rclone/librclone/gomobile

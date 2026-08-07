@@ -93,8 +93,30 @@ object RcloneHelper {
     /** Технически безопасное для rclone имя remote'а из id папки назначения. */
     fun remoteName(destId: String): String = "d" + destId.replace(Regex("[^A-Za-z0-9]"), "")
 
-    /** Пересоздаёт remote с именем [name] типа [type] и параметрами [params] (пароли будут автоматически "обфусцированы" rclone). */
+    /** Отпечаток параметров remote'а этой сессии — чтобы не пересоздавать подключение без необходимости. */
+    private val createdRemotes = mutableMapOf<String, String>() // name -> fingerprint
+
+    private fun paramsFingerprint(type: String, params: Map<String, String>): String =
+        type + "|" + params.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
+
+    /**
+     * Создаёт remote с именем [name] типа [type] и параметрами [params], ЕСЛИ он ещё не создан
+     * в этой сессии с ТАКИМИ ЖЕ параметрами. Раньше remote пересоздавался (delete+create) перед
+     * КАЖДОЙ операцией — это на практике рушило внутренний кэш соединений rclone и заставляло
+     * заново устанавливать сетевое/SSH-соединение на каждый отдельный RC-вызов (список папки,
+     * потом копирование — два переподключения вместо одного переиспользуемого), отсюда
+     * ненормально долгие "config/create" (десятки секунд на операцию, которая должна быть
+     * мгновенной). Теперь пересоздаём только при реальном изменении параметров.
+     */
     fun createOrReplaceRemote(context: Context, name: String, type: String, params: Map<String, String>): RpcResult {
+        val fingerprint = paramsFingerprint(type, params)
+        synchronized(createdRemotes) {
+            if (createdRemotes[name] == fingerprint) {
+                Logger.log(context, "rclone", "remote '$name' уже создан в этой сессии с теми же параметрами — переиспользуем")
+                return RpcResult(true, null, "OK (переиспользован)")
+            }
+        }
+
         // Игнорируем результат удаления — remote может не существовать, это нормально.
         call(context, "config/delete", JSONObject().apply { put("name", name) })
 
@@ -110,7 +132,11 @@ object RcloneHelper {
                 put("nonInteractive", true)
             })
         }
-        return call(context, "config/create", body)
+        val result = call(context, "config/create", body)
+        if (result.success) {
+            synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
+        }
+        return result
     }
 
     /** Проверяет, что remote реально доступен — пробует создать/проверить целевую папку. */
