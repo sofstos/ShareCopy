@@ -213,7 +213,16 @@ object FileCopyEngine {
                 continue
             }
             val result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFs, dstDir)
-            if (result.success) succeeded++ else errors.add("${file.name} (${result.message})")
+            if (!result.success) {
+                errors.add("${file.name} (${result.message})")
+                continue
+            }
+            val verified = RcloneHelper.verifyFileExistsFresh(context, type, params, dstDir, result.targetName)
+            if (verified) {
+                succeeded++
+            } else {
+                errors.add("${file.name} (rclone сообщил об успехе, но независимая проверка не нашла файл на сервере)")
+            }
         }
         return CopyResult(files.size, succeeded, emptyList(), errors)
     }
@@ -238,7 +247,8 @@ object FileCopyEngine {
             } ?: return false
 
             val result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFs, dstDir)
-            result.success
+            if (!result.success) return false
+            RcloneHelper.verifyFileExistsFresh(context, type, params, dstDir, result.targetName)
         } finally {
             tempDir.deleteRecursively()
         }
@@ -316,7 +326,11 @@ object FileCopyEngine {
         if (!ensured.success) return FolderCopyResult(false, "Не удалось подключиться: ${ensured.message}")
 
         val result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, "$remoteName:", basePath, move)
-        return FolderCopyResult(result.success, if (result.success) "OK" else result.message)
+        if (!result.success) return FolderCopyResult(false, result.message)
+
+        val verified = RcloneHelper.verifyFileExistsFresh(context, type, params, basePath, result.targetName)
+        return if (verified) FolderCopyResult(true, "OK")
+        else FolderCopyResult(false, "rclone сообщил об успехе, но независимая проверка не нашла папку на сервере")
     }
 
     private fun copyFolderManual(

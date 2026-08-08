@@ -188,8 +188,10 @@ object RcloneHelper {
         put("_config", JSONObject().apply { put("Inplace", true) })
     }
 
+    data class CopyFileResult(val success: Boolean, val message: String, val targetName: String)
+
     /** Копирует один локальный файл [localDir]/[localName] в [dstFs]:[dstDir]/[localName] (с подбором уникального имени). */
-    fun copyLocalFile(context: Context, localDir: String, localName: String, dstFs: String, dstDir: String): RpcResult {
+    fun copyLocalFile(context: Context, localDir: String, localName: String, dstFs: String, dstDir: String): CopyFileResult {
         val target = uniqueName(context, dstFs, dstDir, localName)
         val body = JSONObject().apply {
             put("srcFs", localDir)
@@ -199,21 +201,40 @@ object RcloneHelper {
         }
         mergeInto(body, inplaceConfig())
         val result = call(context, "operations/copyfile", body)
-        if (!result.success) return result
+        return CopyFileResult(result.success, result.message, target)
+    }
 
-        // Некоторые бэкенды (замечено на Mega) иногда рапортуют успех (код 200), хотя по факту
-        // файл не появляется на удалённой стороне — перестраховываемся явной проверкой листингом.
-        val nowThere = listNames(context, dstFs, dstDir).contains(target)
-        Logger.log(context, "rclone", "verify upload of '$target' in '$dstFs$dstDir' -> found=$nowThere")
-        return if (nowThere) result
-        else RpcResult(
-            false, result.json,
-            "rclone сообщил об успехе, но файл не найден на сервере после копирования (возможно, задержка/ограничение на стороне сервиса)"
-        )
+    /**
+     * Гарантированно НЕЗАВИСИМАЯ проверка "файл реально есть на сервере" — создаёт отдельное
+     * подключение под ДРУГИМ именем remote'а (те же host/user/pass), делает листинг именно
+     * через него и сразу удаляет за собой. Это важно: если использовать для проверки то же
+     * самое (переиспользуемое) подключение, которым шла запись, есть риск, что rclone покажет
+     * собственное оптимистичное представление о результате записи, а не реальное состояние на
+     * сервере — именно так один раз "успешно" скопировался файл, которого по факту не было.
+     */
+    fun verifyFileExistsFresh(context: Context, type: String, params: Map<String, String>, dir: String, fileName: String): Boolean {
+        val verifyName = "verify" + (System.nanoTime() % 100_000_000L)
+        val paramsJson = JSONObject()
+        for ((k, v) in params) paramsJson.put(k, v)
+        val createBody = JSONObject().apply {
+            put("name", verifyName)
+            put("type", type)
+            put("parameters", paramsJson)
+            put("opt", JSONObject().apply { put("obscure", true); put("nonInteractive", true) })
+        }
+        val created = call(context, "config/create", createBody)
+        if (!created.success) {
+            Logger.log(context, "rclone", "verify: не удалось создать независимое подключение для проверки")
+            return false
+        }
+        val found = listNames(context, "$verifyName:", dir).contains(fileName)
+        call(context, "config/delete", JSONObject().apply { put("name", verifyName) })
+        Logger.log(context, "rclone", "независимая проверка '$fileName' в '$dir' -> found=$found")
+        return found
     }
 
     /** Рекурсивно копирует (или перемещает, что удаляет источник) целую локальную папку в [dstFs]:[dstDir]/<имя папки>. */
-    fun copyLocalFolder(context: Context, localFolderPath: String, folderName: String, dstFs: String, dstDir: String, move: Boolean): RpcResult {
+    fun copyLocalFolder(context: Context, localFolderPath: String, folderName: String, dstFs: String, dstDir: String, move: Boolean): CopyFileResult {
         val target = uniqueName(context, dstFs, dstDir, folderName)
         val fullDstDir = if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target"
         // dstFs приходит в форме "remoteName:" — просто дописываем путь папки назначения.
@@ -222,7 +243,8 @@ object RcloneHelper {
             put("dstFs", dstFs + fullDstDir)
         }
         mergeInto(body, inplaceConfig())
-        return call(context, if (move) "sync/move" else "sync/copy", body)
+        val result = call(context, if (move) "sync/move" else "sync/copy", body)
+        return CopyFileResult(result.success, result.message, target)
     }
 
     private fun mergeInto(target: JSONObject, extra: JSONObject) {
