@@ -168,7 +168,15 @@ object FileCopyEngine {
                         // "нормальных" серверах, но лёгкие встроенные реализации sftp-сервера
                         // (например dropbear/busybox на OpenWrt) с этим не справляются и просто
                         // перестают отвечать. Отключаем — пишем строго последовательно, как WinSCP.
-                        "disable_concurrent_writes" to "true"
+                        "disable_concurrent_writes" to "true",
+                        // КРИТИЧНО для скорости: если сервер предлагает diffie-hellman-group-
+                        // exchange-sha256/sha1 в качестве обмена ключами, Go-библиотека crypto/ssh
+                        // (которую использует rclone) выполняет там очень медленную проверку числа
+                        // на простоту — подтверждённый баг Go, 30-45+ секунд на одно подключение
+                        // (см. golang/go#41151). Явно перечисляем только быстрые алгоритмы —
+                        // современные (curve25519/ecdh, доли миллисекунды) плюс запасной вариант
+                        // подешевле (group14, ~20мс), которые поддерживает почти любой SSH-сервер.
+                        "key_exchange" to "curve25519-sha256@libssh.org curve25519-sha256 ecdh-sha2-nistp256 ecdh-sha2-nistp384 ecdh-sha2-nistp521 diffie-hellman-group14-sha256 diffie-hellman-group14-sha1"
                     ),
                     basePath
                 )
