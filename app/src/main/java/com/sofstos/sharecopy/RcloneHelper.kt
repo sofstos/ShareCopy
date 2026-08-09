@@ -11,29 +11,38 @@ import java.util.concurrent.TimeUnit
  * Обёртка над librclone (rclone, встроенный как библиотека через gomobile).
  * Все операции идут через единый JSON RPC-интерфейс Gomobile.rcloneRPC(method, jsonParams).
  *
+ * КРИТИЧЕСКИ ВАЖНО про формат путей: rclone распознаёт ведущий "/" как "путь от НАСТОЯЩЕГО
+ * корня сервера" ТОЛЬКО когда путь идёт ОДНОЙ СТРОКОЙ вместе с именем подключения
+ * ("remoteName:/абсолютный/путь"). Если передать имя подключения и путь ОТДЕЛЬНЫМИ RC-полями
+ * ("fs":"remoteName:", "remote":"/абсолютный/путь") — ведущий "/" игнорируется, и путь
+ * трактуется как ДОБАВЛЕНИЕ к домашней папке пользователя на сервере! Это была настоящая
+ * причина того, что на OpenWrt файлы годами тихо улетали в /root/root/MyShare/... вместо
+ * /root/MyShare/..., а на Windows то же самое приводило к невалидному пути с "C:" внутри
+ * другого пути и ошибке SSH_FX_BAD_MESSAGE. Поэтому здесь ВЕЗДЕ путь конструируется и
+ * передаётся ТОЛЬКО как единая строка "remoteName:/путь" — никогда отдельным полем.
+ *
  * Модель "remote": вместо того чтобы полагаться на состояние, сохранённое ранее в конфиге
- * rclone, мы каждый раз перед использованием пересоздаём remote под актуальными параметрами
- * из нашего собственного хранилища (SettingsStore/Destination) — так исключается риск
- * рассинхронизации, если пользователь отредактировал пароль/хост в нашем UI.
+ * rclone, мы пересоздаём remote под актуальными параметрами из нашего собственного хранилища
+ * (SettingsStore/Destination), но только если параметры реально изменились — так исключается
+ * и риск рассинхронизации, и лишние медленные переподключения.
  *
  * ВАЖНО про параллелизм: если запустить два копирования одновременно, librclone может не быть
  * безопасен для настоящих одновременных вызовов из разных потоков — на практике это приводило
  * к перепутанным логам и ошибкам вида "object not found" на ровном месте. Поэтому ВСЕ вызовы
  * rcloneRPC строго сериализуются через общий lock — параллельные операции встают в очередь.
  *
- * ВАЖНО про зависания: если удалённый сервер отвечает некорректно на уровне протокола (например,
- * Windows SFTP на "экзотический" диск — см. историю), сам вызов к rclone иногда не завершается
- * ВООБЩЕ. Без защиты от этого общая блокировка осталась бы захваченной навсегда, и вообще ЛЮБАЯ
- * следующая операция (даже на другой, полностью исправный сервер) зависала бы за ней в очереди.
- * Поэтому каждый вызов выполняется в отдельном потоке с таймаутом — если сервер не ответил за
- * отведённое время, мы считаем вызов проваленным и отпускаем блокировку для остальных операций
- * (сам зависший поток при этом просто "утекает" в фоне — процесс это не блокирует).
+ * ВАЖНО про зависания: если удалённый сервер отвечает некорректно на уровне протокола, сам
+ * вызов к rclone иногда не завершается ВООБЩЕ. Без защиты общая блокировка осталась бы
+ * захваченной навсегда, и любая следующая операция (даже на другой, исправный сервер)
+ * зависала бы за ней в очереди. Поэтому каждый вызов выполняется в отдельном потоке с
+ * таймаутом — если сервер не ответил за отведённое время, вызов считается проваленным и
+ * блокировка отпускается (зависший поток при этом просто "утекает" в фоне).
  */
 object RcloneHelper {
 
     @Volatile private var initialized = false
     private val rpcLock = Any()
-    private const val CALL_TIMEOUT_MS = 10 * 60_000L // 10 минут — слабые устройства (роутеры) на больших файлах могут быть медленными, а операция теперь всё равно идёт в фоне и не блокирует экран
+    private const val CALL_TIMEOUT_MS = 10 * 60_000L
 
     @Synchronized
     private fun ensureInit() {
@@ -93,21 +102,15 @@ object RcloneHelper {
     /** Технически безопасное для rclone имя remote'а из id папки назначения. */
     fun remoteName(destId: String): String = "d" + destId.replace(Regex("[^A-Za-z0-9]"), "")
 
-    /** Отпечаток параметров remote'а этой сессии — чтобы не пересоздавать подключение без необходимости. */
+    /** Склеивает имя remote'а и путь в ОДНУ строку — единственный правильный способ передать абсолютный путь (см. комментарий класса). */
+    fun fsSpec(remoteName: String, path: String): String = "$remoteName:$path"
+
     private val createdRemotes = mutableMapOf<String, String>() // name -> fingerprint
 
     private fun paramsFingerprint(type: String, params: Map<String, String>): String =
         type + "|" + params.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
 
-    /**
-     * Создаёт remote с именем [name] типа [type] и параметрами [params], ЕСЛИ он ещё не создан
-     * в этой сессии с ТАКИМИ ЖЕ параметрами. Раньше remote пересоздавался (delete+create) перед
-     * КАЖДОЙ операцией — это на практике рушило внутренний кэш соединений rclone и заставляло
-     * заново устанавливать сетевое/SSH-соединение на каждый отдельный RC-вызов (список папки,
-     * потом копирование — два переподключения вместо одного переиспользуемого), отсюда
-     * ненормально долгие "config/create" (десятки секунд на операцию, которая должна быть
-     * мгновенной). Теперь пересоздаём только при реальном изменении параметров.
-     */
+    /** Создаёт remote с именем [name] типа [type] и параметрами [params], только если он ещё не создан в этой сессии с ТАКИМИ ЖЕ параметрами. */
     fun createOrReplaceRemote(context: Context, name: String, type: String, params: Map<String, String>): RpcResult {
         val fingerprint = paramsFingerprint(type, params)
         synchronized(createdRemotes) {
@@ -117,7 +120,6 @@ object RcloneHelper {
             }
         }
 
-        // Игнорируем результат удаления — remote может не существовать, это нормально.
         call(context, "config/delete", JSONObject().apply { put("name", name) })
 
         val paramsJson = JSONObject()
@@ -139,21 +141,20 @@ object RcloneHelper {
         return result
     }
 
-    /** Проверяет, что remote реально доступен — пробует создать/проверить целевую папку. */
+    /** Проверяет, что [fsSpec] (уже вида "remoteName:/путь") реально доступен — пробует создать/проверить папку. */
     fun testRemotePath(context: Context, fsSpec: String): RpcResult {
         val body = JSONObject().apply {
             put("fs", fsSpec)
             put("remote", "")
         }
-        // mkdir идемпотентен — если папка уже есть, ошибки не будет; заодно проверяет доступ на запись.
         return call(context, "operations/mkdir", body)
     }
 
-    /** Список имён файлов/папок в [dir] (без рекурсии) — для подбора уникального имени при копировании. */
-    fun listNames(context: Context, fsSpec: String, dir: String): Set<String> {
+    /** Список имён файлов/папок в [fsSpec] (уже вида "remoteName:/путь", без рекурсии). */
+    fun listNames(context: Context, fsSpec: String): Set<String> {
         val body = JSONObject().apply {
             put("fs", fsSpec)
-            put("remote", dir)
+            put("remote", "")
             put("opt", JSONObject().apply { put("recurse", false) })
         }
         val result = call(context, "operations/list", body)
@@ -167,8 +168,8 @@ object RcloneHelper {
         return names
     }
 
-    fun uniqueName(context: Context, fsSpec: String, dir: String, name: String): String {
-        val existing = listNames(context, fsSpec, dir)
+    fun uniqueName(context: Context, fsSpec: String, name: String): String {
+        val existing = listNames(context, fsSpec)
         if (name !in existing) return name
         val dot = name.lastIndexOf('.')
         val base = if (dot > 0) name.substring(0, dot) else name
@@ -180,9 +181,8 @@ object RcloneHelper {
 
     /**
      * "_config": {"Inplace": true} отключает временные .partial-файлы и переименование после
-     * загрузки (стандартное поведение rclone) — пишем сразу под финальным именем. Это убирает
-     * целый класс проблем с "осиротевшими" .partial-файлами на серверах, которые не до конца
-     * поддерживают rename/переименование (замечено на OpenWrt).
+     * загрузки — пишем сразу под финальным именем. Убирает класс проблем с "осиротевшими"
+     * .partial-файлами на серверах, которые не до конца поддерживают rename (замечено на OpenWrt).
      */
     private fun inplaceConfig(): JSONObject = JSONObject().apply {
         put("_config", JSONObject().apply { put("Inplace", true) })
@@ -190,14 +190,14 @@ object RcloneHelper {
 
     data class CopyFileResult(val success: Boolean, val message: String, val targetName: String)
 
-    /** Копирует один локальный файл [localDir]/[localName] в [dstFs]:[dstDir]/[localName] (с подбором уникального имени). */
-    fun copyLocalFile(context: Context, localDir: String, localName: String, dstFs: String, dstDir: String): CopyFileResult {
-        val target = uniqueName(context, dstFs, dstDir, localName)
+    /** Копирует один локальный файл [localDir]/[localName] в папку [dstFsSpec] (уже вида "remoteName:/путь"), с подбором уникального имени. */
+    fun copyLocalFile(context: Context, localDir: String, localName: String, dstFsSpec: String): CopyFileResult {
+        val target = uniqueName(context, dstFsSpec, localName)
         val body = JSONObject().apply {
             put("srcFs", localDir)
             put("srcRemote", localName)
-            put("dstFs", dstFs)
-            put("dstRemote", if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target")
+            put("dstFs", dstFsSpec)
+            put("dstRemote", target)
         }
         mergeInto(body, inplaceConfig())
         val result = call(context, "operations/copyfile", body)
@@ -207,12 +207,9 @@ object RcloneHelper {
     /**
      * Гарантированно НЕЗАВИСИМАЯ проверка "файл реально есть на сервере" — создаёт отдельное
      * подключение под ДРУГИМ именем remote'а (те же host/user/pass), делает листинг именно
-     * через него и сразу удаляет за собой. Это важно: если использовать для проверки то же
-     * самое (переиспользуемое) подключение, которым шла запись, есть риск, что rclone покажет
-     * собственное оптимистичное представление о результате записи, а не реальное состояние на
-     * сервере — именно так один раз "успешно" скопировался файл, которого по факту не было.
+     * через него и сразу удаляет за собой.
      */
-    fun verifyFileExistsFresh(context: Context, type: String, params: Map<String, String>, dir: String, fileName: String): Boolean {
+    fun verifyFileExistsFresh(context: Context, type: String, params: Map<String, String>, dirPath: String, fileName: String): Boolean {
         val verifyName = "verify" + (System.nanoTime() % 100_000_000L)
         val paramsJson = JSONObject()
         for ((k, v) in params) paramsJson.put(k, v)
@@ -227,20 +224,20 @@ object RcloneHelper {
             Logger.log(context, "rclone", "verify: не удалось создать независимое подключение для проверки")
             return false
         }
-        val found = listNames(context, "$verifyName:", dir).contains(fileName)
+        val found = listNames(context, fsSpec(verifyName, dirPath)).contains(fileName)
         call(context, "config/delete", JSONObject().apply { put("name", verifyName) })
-        Logger.log(context, "rclone", "независимая проверка '$fileName' в '$dir' -> found=$found")
+        Logger.log(context, "rclone", "независимая проверка '$fileName' в '$dirPath' -> found=$found")
         return found
     }
 
-    /** Рекурсивно копирует (или перемещает, что удаляет источник) целую локальную папку в [dstFs]:[dstDir]/<имя папки>. */
-    fun copyLocalFolder(context: Context, localFolderPath: String, folderName: String, dstFs: String, dstDir: String, move: Boolean): CopyFileResult {
-        val target = uniqueName(context, dstFs, dstDir, folderName)
-        val fullDstDir = if (dstDir.isBlank()) target else "${dstDir.trimEnd('/')}/$target"
-        // dstFs приходит в форме "remoteName:" — просто дописываем путь папки назначения.
+    /** Рекурсивно копирует (или перемещает) целую локальную папку в [dstBaseFsSpec] (уже вида "remoteName:/путь") под новым подкаталогом с именем [folderName]. */
+    fun copyLocalFolder(context: Context, localFolderPath: String, folderName: String, dstBaseFsSpec: String, move: Boolean): CopyFileResult {
+        val target = uniqueName(context, dstBaseFsSpec, folderName)
+        // dstBaseFsSpec уже вида "remoteName:/путь" — просто дописываем имя новой папки через "/".
+        val fullDstFs = dstBaseFsSpec.trimEnd('/') + "/" + target
         val body = JSONObject().apply {
             put("srcFs", localFolderPath)
-            put("dstFs", dstFs + fullDstDir)
+            put("dstFs", fullDstFs)
         }
         mergeInto(body, inplaceConfig())
         val result = call(context, if (move) "sync/move" else "sync/copy", body)
