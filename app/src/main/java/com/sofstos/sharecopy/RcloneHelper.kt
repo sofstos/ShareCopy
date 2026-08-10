@@ -205,28 +205,16 @@ object RcloneHelper {
     }
 
     /**
-     * Гарантированно НЕЗАВИСИМАЯ проверка "файл реально есть на сервере" — создаёт отдельное
-     * подключение под ДРУГИМ именем remote'а (те же host/user/pass), делает листинг именно
-     * через него и сразу удаляет за собой.
+     * Проверка "файл реально есть на сервере" через УЖЕ ОТКРЫТОЕ соединение [fsSpec]
+     * (то же самое, которым шла запись). Раньше здесь создавалось отдельное, полностью
+     * независимое подключение для перестраховки — но настоящая причина прошлых ложных
+     * "успехов" была в другом (путь неправильно склеивался, см. историю) и уже исправлена.
+     * Повторный логин на каждый файл был просто лишними затратами времени — особенно
+     * заметно на Mega, где вход в аккаунт сам по себе не мгновенный.
      */
-    fun verifyFileExistsFresh(context: Context, type: String, params: Map<String, String>, dirPath: String, fileName: String): Boolean {
-        val verifyName = "verify" + (System.nanoTime() % 100_000_000L)
-        val paramsJson = JSONObject()
-        for ((k, v) in params) paramsJson.put(k, v)
-        val createBody = JSONObject().apply {
-            put("name", verifyName)
-            put("type", type)
-            put("parameters", paramsJson)
-            put("opt", JSONObject().apply { put("obscure", true); put("nonInteractive", true) })
-        }
-        val created = call(context, "config/create", createBody)
-        if (!created.success) {
-            Logger.log(context, "rclone", "verify: не удалось создать независимое подключение для проверки")
-            return false
-        }
-        val found = listNames(context, fsSpec(verifyName, dirPath)).contains(fileName)
-        call(context, "config/delete", JSONObject().apply { put("name", verifyName) })
-        Logger.log(context, "rclone", "независимая проверка '$fileName' в '$dirPath' -> found=$found")
+    fun verifyFileExists(context: Context, fsSpec: String, fileName: String): Boolean {
+        val found = listNames(context, fsSpec).contains(fileName)
+        Logger.log(context, "rclone", "проверка '$fileName' в '$fsSpec' -> found=$found")
         return found
     }
 

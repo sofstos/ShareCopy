@@ -225,7 +225,7 @@ object FileCopyEngine {
                 errors.add("${file.name} (${result.message})")
                 continue
             }
-            val verified = RcloneHelper.verifyFileExistsFresh(context, type, params, dstDir, result.targetName)
+            val verified = RcloneHelper.verifyFileExists(context, dstFsSpec, result.targetName)
             if (verified) {
                 succeeded++
             } else {
@@ -256,7 +256,7 @@ object FileCopyEngine {
 
             val result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFsSpec)
             if (!result.success) return false
-            RcloneHelper.verifyFileExistsFresh(context, type, params, dstDir, result.targetName)
+            RcloneHelper.verifyFileExists(context, dstFsSpec, result.targetName)
         } finally {
             tempDir.deleteRecursively()
         }
@@ -336,9 +336,9 @@ object FileCopyEngine {
         val result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, RcloneHelper.fsSpec(remoteName, basePath), move)
         if (!result.success) return FolderCopyResult(false, result.message)
 
-        val verified = RcloneHelper.verifyFileExistsFresh(context, type, params, basePath, result.targetName)
+        val verified = RcloneHelper.verifyFileExists(context, RcloneHelper.fsSpec(remoteName, basePath), result.targetName)
         return if (verified) FolderCopyResult(true, "OK")
-        else FolderCopyResult(false, "rclone сообщил об успехе, но независимая проверка не нашла папку на сервере")
+        else FolderCopyResult(false, "rclone сообщил об успехе, но проверка не нашла папку на сервере")
     }
 
     private fun copyFolderManual(
