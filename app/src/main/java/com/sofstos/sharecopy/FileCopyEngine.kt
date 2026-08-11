@@ -200,15 +200,15 @@ object FileCopyEngine {
      * на исходный content:// URI, которые Android может отозвать после закрытия экрана-источника.
      */
     fun uploadStagedFiles(context: Context, files: List<File>, destination: Destination, subfolderName: String?): CopyResult {
-        val (type, params, basePath) = rcloneBackendInfo(destination)
+        val (_, _, basePath) = rcloneBackendInfo(destination)
             ?: return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (не настроены параметры подключения)" })
 
+        // Подключение уже создано и сохранено на диске (в rclone.conf) в момент сохранения этой
+        // папки назначения в настройках — пересоздавать его перед КАЖДЫМ копированием не нужно,
+        // это была основная причина медлительности (даже с быстрым обменом ключей всё равно
+        // лишний RPC-вызов на каждый файл). Так же устроены "быстрые" rclone-приложения вроде
+        // Round-Sync: настройка подключения — разовое действие, а не часть каждой передачи.
         val remoteName = RcloneHelper.remoteName(destination.id)
-        val ensured = RcloneHelper.createOrReplaceRemote(context, remoteName, type, params)
-        if (!ensured.success) {
-            return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (${ensured.message})" })
-        }
-
         val dstDir = if (!subfolderName.isNullOrBlank()) joinRemoteDir(basePath, sanitizeName(subfolderName)) else basePath
         val dstFsSpec = RcloneHelper.fsSpec(remoteName, dstDir)
 
@@ -236,11 +236,8 @@ object FileCopyEngine {
     }
 
     private fun writeToRclone(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
-        val (type, params, basePath) = rcloneBackendInfo(destination) ?: return false
+        val (_, _, basePath) = rcloneBackendInfo(destination) ?: return false
         val remoteName = RcloneHelper.remoteName(destination.id)
-        val ensured = RcloneHelper.createOrReplaceRemote(context, remoteName, type, params)
-        if (!ensured.success) return false
-
         val dstDir = if (!subfolderName.isNullOrBlank()) joinRemoteDir(basePath, sanitizeName(subfolderName)) else basePath
         val dstFsSpec = RcloneHelper.fsSpec(remoteName, dstDir)
 
@@ -327,11 +324,9 @@ object FileCopyEngine {
         if (!srcRoot.canRead()) {
             return FolderCopyResult(false, "Нет прав на чтение исходной папки: ${srcRoot.path}")
         }
-        val (type, params, basePath) = rcloneBackendInfo(destination)
+        val (_, _, basePath) = rcloneBackendInfo(destination)
             ?: return FolderCopyResult(false, "Не настроены параметры подключения")
         val remoteName = RcloneHelper.remoteName(destination.id)
-        val ensured = RcloneHelper.createOrReplaceRemote(context, remoteName, type, params)
-        if (!ensured.success) return FolderCopyResult(false, "Не удалось подключиться: ${ensured.message}")
 
         val result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, RcloneHelper.fsSpec(remoteName, basePath), move)
         if (!result.success) return FolderCopyResult(false, result.message)
