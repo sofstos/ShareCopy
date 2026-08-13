@@ -110,13 +110,20 @@ object RcloneHelper {
     private fun paramsFingerprint(type: String, params: Map<String, String>): String =
         type + "|" + params.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
 
-    /** Создаёт remote с именем [name] типа [type] и параметрами [params], только если он ещё не создан в этой сессии с ТАКИМИ ЖЕ параметрами. */
-    fun createOrReplaceRemote(context: Context, name: String, type: String, params: Map<String, String>): RpcResult {
+    /** Похожа ли ошибка на "в конфиге нет такого remote'а" — сигнал создать его и повторить попытку. */
+    fun isMissingRemoteError(message: String): Boolean =
+        message.contains("didn't find section", ignoreCase = true) ||
+        message.contains("couldn't find section", ignoreCase = true)
+
+    /** Создаёт remote с именем [name] типа [type] и параметрами [params], только если он ещё не создан в этой сессии с ТАКИМИ ЖЕ параметрами (если [force] — создаёт безусловно). */
+    fun createOrReplaceRemote(context: Context, name: String, type: String, params: Map<String, String>, force: Boolean = false): RpcResult {
         val fingerprint = paramsFingerprint(type, params)
-        synchronized(createdRemotes) {
-            if (createdRemotes[name] == fingerprint) {
-                Logger.log(context, "rclone", "remote '$name' уже создан в этой сессии с теми же параметрами — переиспользуем")
-                return RpcResult(true, null, "OK (переиспользован)")
+        if (!force) {
+            synchronized(createdRemotes) {
+                if (createdRemotes[name] == fingerprint) {
+                    Logger.log(context, "rclone", "remote '$name' уже создан в этой сессии с теми же параметрами — переиспользуем")
+                    return RpcResult(true, null, "OK (переиспользован)")
+                }
             }
         }
 

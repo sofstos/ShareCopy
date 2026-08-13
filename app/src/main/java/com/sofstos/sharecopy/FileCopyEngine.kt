@@ -200,14 +200,15 @@ object FileCopyEngine {
      * на исходный content:// URI, которые Android может отозвать после закрытия экрана-источника.
      */
     fun uploadStagedFiles(context: Context, files: List<File>, destination: Destination, subfolderName: String?): CopyResult {
-        val (_, _, basePath) = rcloneBackendInfo(destination)
+        val (type, params, basePath) = rcloneBackendInfo(destination)
             ?: return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (не настроены параметры подключения)" })
 
-        // Подключение уже создано и сохранено на диске (в rclone.conf) в момент сохранения этой
-        // папки назначения в настройках — пересоздавать его перед КАЖДЫМ копированием не нужно,
-        // это была основная причина медлительности (даже с быстрым обменом ключей всё равно
-        // лишний RPC-вызов на каждый файл). Так же устроены "быстрые" rclone-приложения вроде
-        // Round-Sync: настройка подключения — разовое действие, а не часть каждой передачи.
+        // Подключение уже должно быть создано и сохранено на диске (в rclone.conf) в момент
+        // сохранения этой папки назначения в настройках — пересоздавать его перед КАЖДЫМ
+        // копированием не нужно (это была основная причина медлительности). Но если по какой-то
+        // причине сохранение на диск не сработало (например, приложение перезапустилось до
+        // первого реального копирования) — ниже есть подстраховка: при ошибке "нет такой
+        // секции" подключение создаётся на лету и попытка повторяется один раз.
         val remoteName = RcloneHelper.remoteName(destination.id)
         val dstDir = if (!subfolderName.isNullOrBlank()) joinRemoteDir(basePath, sanitizeName(subfolderName)) else basePath
         val dstFsSpec = RcloneHelper.fsSpec(remoteName, dstDir)
@@ -220,7 +221,11 @@ object FileCopyEngine {
                 errors.add("${file.name} (внутренняя ошибка пути)")
                 continue
             }
-            val result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec)
+            var result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec)
+            if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
+                RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+                result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec)
+            }
             if (!result.success) {
                 errors.add("${file.name} (${result.message})")
                 continue
@@ -236,7 +241,7 @@ object FileCopyEngine {
     }
 
     private fun writeToRclone(context: Context, source: Uri, destination: Destination, name: String, subfolderName: String?): Boolean {
-        val (_, _, basePath) = rcloneBackendInfo(destination) ?: return false
+        val (type, params, basePath) = rcloneBackendInfo(destination) ?: return false
         val remoteName = RcloneHelper.remoteName(destination.id)
         val dstDir = if (!subfolderName.isNullOrBlank()) joinRemoteDir(basePath, sanitizeName(subfolderName)) else basePath
         val dstFsSpec = RcloneHelper.fsSpec(remoteName, dstDir)
@@ -251,7 +256,11 @@ object FileCopyEngine {
                 FileOutputStream(tempFile).use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
             } ?: return false
 
-            val result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFsSpec)
+            var result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFsSpec)
+            if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
+                RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+                result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFsSpec)
+            }
             if (!result.success) return false
             RcloneHelper.verifyFileExists(context, dstFsSpec, result.targetName)
         } finally {
@@ -324,14 +333,19 @@ object FileCopyEngine {
         if (!srcRoot.canRead()) {
             return FolderCopyResult(false, "Нет прав на чтение исходной папки: ${srcRoot.path}")
         }
-        val (_, _, basePath) = rcloneBackendInfo(destination)
+        val (type, params, basePath) = rcloneBackendInfo(destination)
             ?: return FolderCopyResult(false, "Не настроены параметры подключения")
         val remoteName = RcloneHelper.remoteName(destination.id)
+        val dstFsSpec = RcloneHelper.fsSpec(remoteName, basePath)
 
-        val result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, RcloneHelper.fsSpec(remoteName, basePath), move)
+        var result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, dstFsSpec, move)
+        if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
+            RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+            result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, dstFsSpec, move)
+        }
         if (!result.success) return FolderCopyResult(false, result.message)
 
-        val verified = RcloneHelper.verifyFileExists(context, RcloneHelper.fsSpec(remoteName, basePath), result.targetName)
+        val verified = RcloneHelper.verifyFileExists(context, dstFsSpec, result.targetName)
         return if (verified) FolderCopyResult(true, "OK")
         else FolderCopyResult(false, "rclone сообщил об успехе, но проверка не нашла папку на сервере")
     }
