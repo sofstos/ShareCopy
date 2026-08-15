@@ -99,6 +99,7 @@
 
     <string name="preparing_files">Подготовка файлов…</string>
     <string name="error_prepare_files_failed">Не удалось подготовить ни один файл для отправки</string>
+    <string name="error_no_source_extracted">Не удалось получить файл из этого приложения (см. лог, если настроен)</string>
     <string name="toast_some_files_prepare_failed">Часть файлов не удалось прочитать — остальные копируются</string>
 
     <string name="menu_log_folder">Папка логов</string>

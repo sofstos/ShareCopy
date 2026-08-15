@@ -53,6 +53,11 @@ class ShareTargetActivity : AppCompatActivity() {
         checkMove.isChecked = store.getLastMoveFlag()
         checkMove.setOnCheckedChangeListener { _, checked -> store.setLastMoveFlag(checked) }
 
+        Logger.log(
+            this, "share",
+            "получен intent: action=${intent?.action} type=${intent?.type} extras=${intent?.extras?.keySet()?.joinToString()}"
+        )
+
         val rawText = extractSharedText(intent)
         if (rawText != null) {
             handleSharedText(rawText.trim())
@@ -61,9 +66,12 @@ class ShareTargetActivity : AppCompatActivity() {
 
         fileSources = extractFileSources(intent)
         if (fileSources.isEmpty()) {
+            Logger.log(this, "share", "✗ fileSources пуст после extractFileSources — не удалось извлечь ни одного источника из intent")
+            Toast.makeText(this, R.string.error_no_source_extracted, Toast.LENGTH_LONG).show()
             finish()
             return
         }
+        Logger.log(this, "share", "извлечено источников: ${fileSources.size} -> ${fileSources.joinToString()}")
         setupSubfolderCheckbox()
         showDestinationPicker()
     }
@@ -325,6 +333,7 @@ class ShareTargetActivity : AppCompatActivity() {
                     }
 
                     val destFile = File(stagingDir, candidateName)
+                    Logger.log(applicationContext, "stage", "чтение '$displayName' из uri=$uri")
                     val opened = contentResolver.openInputStream(uri)?.use { input ->
                         FileOutputStream(destFile).use { output -> input.copyTo(output, bufferSize = 64 * 1024) }
                         true
@@ -332,12 +341,15 @@ class ShareTargetActivity : AppCompatActivity() {
 
                     if (opened) {
                         stagedNames.add(candidateName)
+                        Logger.log(applicationContext, "stage", "'$displayName' прочитан успешно (${destFile.length()} байт)")
                         if (move) FileCopyEngine.tryRemoveSource(applicationContext, uri)
                     } else {
                         anyFailed = true
+                        Logger.log(applicationContext, "stage", "✗ '$displayName': openInputStream вернул null (нет доступа к $uri)")
                     }
                 } catch (e: Exception) {
                     anyFailed = true
+                    Logger.log(applicationContext, "stage", "✗ ошибка чтения uri=$uri: ${e.javaClass.simpleName}: ${e.message}")
                 }
             }
 

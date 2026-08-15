@@ -107,6 +107,13 @@ jobs:
           set -o pipefail
           { cat /tmp/librclone_build.log 2>/dev/null; echo "=== GRADLE BUILD ==="; gradle assembleDebug --no-daemon; } 2>&1 | tee /tmp/build.log
 
+      - name: Extract version name
+        if: steps.build.outcome == 'success'
+        id: version
+        run: |
+          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
+          echo "name=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Publish APK as GitHub Release asset
         if: steps.build.outcome == 'success'
         id: release
@@ -119,12 +126,15 @@ jobs:
             # APK теперь заметно больше 100 МБ (rclone) — обычный git push такой файл не пропустит.
             # Release assets отдаются через release-assets.githubusercontent.com, а не через
             # тот же Azure Blob, что блокировал обычные Actions-артефакты и логи джобов.
+            VERSION="${{ steps.version.outputs.name }}"
+            APK_NAME="ShareCopy-v${VERSION}.apk"
+            cp "app/build/outputs/apk/debug/app-debug.apk" "app/build/outputs/apk/debug/$APK_NAME"
             gh release delete latest-build --yes --cleanup-tag --repo "${{ github.repository }}" || true
-            gh release create latest-build "app/build/outputs/apk/debug/app-debug.apk" \
+            gh release create latest-build "app/build/outputs/apk/debug/$APK_NAME" \
               --repo "${{ github.repository }}" \
               --target "${{ github.sha }}" \
-              --title "Latest build (run ${{ github.run_number }})" \
-              --notes "Automated build from commit ${{ github.sha }}"
+              --title "ShareCopy v${VERSION} (сборка ${{ github.run_number }})" \
+              --notes "Версия ${VERSION}. Автоматическая сборка из коммита ${{ github.sha }}"
           } 2>&1 | tee /tmp/release.log
 
       - name: Publish build log to apk-output branch
