@@ -57,9 +57,15 @@ jobs:
           set -o pipefail
           {
             echo "=== Installing Android NDK ==="
-            yes | sdkmanager --licenses > /dev/null 2>&1 || true
-            sdkmanager --install "ndk;26.1.10909125"
-            export ANDROID_NDK_HOME="$ANDROID_SDK_ROOT/ndk/26.1.10909125"
+            SDK_ROOT="${ANDROID_SDK_ROOT:-${ANDROID_HOME:?ANDROID_HOME is not set}}"
+            SDKMANAGER="$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager"
+            if [ ! -x "$SDKMANAGER" ]; then
+              SDKMANAGER="$(command -v sdkmanager)"
+            fi
+            echo "Using sdkmanager: $SDKMANAGER"
+            yes | "$SDKMANAGER" --licenses > /dev/null 2>&1 || true
+            "$SDKMANAGER" --install "ndk;26.1.10909125"
+            export ANDROID_NDK_HOME="$SDK_ROOT/ndk/26.1.10909125"
             echo "ANDROID_NDK_HOME=$ANDROID_NDK_HOME"
 
             echo "=== Installing gomobile/gobind ==="
