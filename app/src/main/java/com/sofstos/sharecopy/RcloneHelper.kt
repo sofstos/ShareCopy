@@ -164,7 +164,9 @@ object RcloneHelper {
         val remotes = listed.json?.optJSONArray("remotes")
         if (listed.success && remotes != null) {
             for (i in 0 until remotes.length()) {
-                if (remotes.optString(i) == name) {
+                // rclone обычно возвращает имена как "remote:", хотя config/create
+                // принимает имя без завершающего двоеточия.
+                if (remotes.optString(i).trimEnd(':') == name.trimEnd(':')) {
                     synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
                     Logger.log(context, "rclone", "remote '$name' восстановлен из постоянного конфига")
                     return RpcResult(true, null, "OK (из конфига)")
@@ -307,11 +309,14 @@ object RcloneHelper {
             val totalBytes = statsJson?.optLong("totalBytes", 0L) ?: 0L
             onProgress?.invoke(bytes, totalBytes)
 
+            // Для асинхронных RC-задач endpoint называется job/status, а не
+            // core/jobstatus. Несуществующий endpoint приводил к бесконечному
+            // ожиданию до 10 минут при неизменном прогрессе 0%.
             val status = call(
                 context,
-                "core/jobstatus",
+                "job/status",
                 JSONObject().put("jobid", jobId),
-                log = false
+                log = true
             )
             val statusJson = status.json
             if (status.success && statusJson?.optBoolean("finished", false) == true) {
