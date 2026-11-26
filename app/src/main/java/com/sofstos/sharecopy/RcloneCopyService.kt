@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import java.io.File
+import kotlin.math.min
 
 /**
  * Копирование/перемещение на SFTP/Mega может занимать долгое время (сеть, задержки).
@@ -46,7 +47,9 @@ class RcloneCopyService : Service() {
         val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
         val destName = dest?.name ?: "?"
 
-        startForeground(FOREGROUND_NOTIF_ID, buildProgressNotification(opWord, destName))
+        val initialProgress = CopyProgress(active = true, operation = opWord, destination = destName)
+        CopyProgressBus.publish(initialProgress)
+        startForeground(FOREGROUND_NOTIF_ID, buildProgressNotification(initialProgress))
         val resultNotifId = FOREGROUND_NOTIF_ID + startId
         Logger.log(this, "service", "start op=$opWord dest=$destName type=${dest?.type} isFolder=${intent.getBooleanExtra(EXTRA_IS_FOLDER, false)}")
 
@@ -55,6 +58,8 @@ class RcloneCopyService : Service() {
         Thread {
             val (success, resultText) = runCopy(intent, dest, move, opWord, destName)
             Logger.log(this, "service", "done success=$success text=$resultText")
+            val completedState = CopyProgressBus.current().copy(active = false, message = resultText)
+            CopyProgressBus.publish(completedState)
 
             if (success) VibrationHelper.success(applicationContext) else VibrationHelper.error(applicationContext)
 
@@ -66,6 +71,8 @@ class RcloneCopyService : Service() {
 
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
+            Thread.sleep(8_000L)
+            if (!CopyProgressBus.current().active) CopyProgressBus.clear()
         }.start()
 
         return START_NOT_STICKY
@@ -80,7 +87,10 @@ class RcloneCopyService : Service() {
         if (isFolder) {
             val folderPath = intent.getStringExtra(EXTRA_FOLDER_PATH) ?: ""
             val folderUseRoot = intent.getBooleanExtra(EXTRA_FOLDER_USE_ROOT, false)
+            publishProgress(opWord, destName, listOf(CopyItemProgress(File(folderPath).name.ifBlank { "папка" }, CopyItemState.COPYING)), 0)
             val result = FileCopyEngine.runFolder(applicationContext, folderPath, folderUseRoot, dest, move)
+            val state = if (result.success) CopyItemState.DONE else CopyItemState.FAILED
+            publishProgress(opWord, destName, listOf(CopyItemProgress(File(folderPath).name.ifBlank { "папка" }, state)), 0, result.message)
             val text = if (result.success) getString(R.string.folder_result_ok, opWord, destName)
                        else getString(R.string.folder_result_fail, opWord, result.message)
             return result.success to text
@@ -96,7 +106,14 @@ class RcloneCopyService : Service() {
 
         val stagingDir = File(stagingDirPath)
         val files = fileNames.map { File(stagingDir, it) }.filter { it.exists() }
-        val result = FileCopyEngine.uploadStagedFiles(applicationContext, files, dest, subfolder)
+        val progressItems = files.map { CopyItemProgress(it.name) }.toMutableList()
+        publishProgress(opWord, destName, progressItems, -1, "Подготовка сетевого копирования")
+        val result = FileCopyEngine.uploadStagedFiles(applicationContext, files, dest, subfolder) { index, name, state, bytes, totalBytes, error ->
+            if (index in progressItems.indices) {
+                progressItems[index] = CopyItemProgress(name, state, min(bytes, totalBytes.takeIf { it > 0L } ?: bytes), totalBytes, error)
+            }
+            publishProgress(opWord, destName, progressItems, index)
+        }
 
         val success = result.total > 0 && result.succeeded == result.total
         val text = when {
@@ -108,6 +125,26 @@ class RcloneCopyService : Service() {
                 errorsSuffix(result.errors)
         }
         return success to text
+    }
+
+    private fun publishProgress(
+        operation: String,
+        destination: String,
+        items: List<CopyItemProgress>,
+        currentIndex: Int,
+        message: String = ""
+    ) {
+        val progress = CopyProgress(
+            active = true,
+            operation = operation,
+            destination = destination,
+            items = items.toList(),
+            currentIndex = currentIndex,
+            message = message
+        )
+        CopyProgressBus.publish(progress)
+        val manager = getSystemService(NotificationManager::class.java)
+        manager?.notify(FOREGROUND_NOTIF_ID, buildProgressNotification(progress))
     }
 
     /** Дописывает к тексту результата конкретные причины ошибок (укорачивая при необходимости). */
@@ -130,13 +167,38 @@ class RcloneCopyService : Service() {
         }
     }
 
-    private fun buildProgressNotification(opWord: String, destName: String): Notification {
+    private fun buildProgressNotification(progress: CopyProgress): Notification {
+        val current = progress.currentItem
+        val currentText = if (current != null) {
+            getString(R.string.notif_progress_current, progress.currentIndex + 1, progress.items.size, current.name)
+        } else {
+            progress.message.ifBlank { getString(R.string.notif_progress_text, progress.operation, progress.destination) }
+        }
+        val totalBytes = progress.totalBytes
+        val copiedBytes = progress.copiedBytes
+        val style = NotificationCompat.InboxStyle()
+            .setSummaryText(getString(R.string.notif_progress_summary, progress.completedCount, progress.items.size))
+        progress.items.forEach { item ->
+            val line = when (item.state) {
+                CopyItemState.DONE -> getString(R.string.notif_item_done, item.name)
+                CopyItemState.COPYING -> getString(R.string.notif_item_copying, item.name)
+                CopyItemState.FAILED -> getString(R.string.notif_item_failed, item.name)
+                CopyItemState.PENDING -> getString(R.string.notif_item_pending, item.name)
+            }
+            style.addLine(line)
+        }
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.notif_progress_title, opWord))
-            .setContentText(getString(R.string.notif_progress_text, opWord, destName))
+            .setContentTitle(getString(R.string.notif_progress_title, progress.operation))
+            .setContentText(currentText)
+            .setStyle(style)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
-            .setProgress(0, 0, true)
+            .setOnlyAlertOnce(true)
+            .setProgress(
+                if (totalBytes > 0L) totalBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+                if (totalBytes > 0L) copiedBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt() else 0,
+                totalBytes <= 0L
+            )
             .build()
     }
 

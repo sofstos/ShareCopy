@@ -54,10 +54,10 @@ object RcloneHelper {
 
     data class RpcResult(val success: Boolean, val json: JSONObject?, val message: String)
 
-    fun call(context: Context, method: String, params: JSONObject = JSONObject()): RpcResult {
+    fun call(context: Context, method: String, params: JSONObject = JSONObject(), log: Boolean = true): RpcResult {
         ensureInit()
         synchronized(rpcLock) {
-            Logger.log(context, "rclone", "→ $method $params")
+            if (log) Logger.log(context, "rclone", "→ $method $params")
 
             val latch = CountDownLatch(1)
             var rawResult: RcloneRPCResult? = null
@@ -76,12 +76,12 @@ object RcloneHelper {
 
             val completed = latch.await(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
             if (!completed) {
-                Logger.log(context, "rclone", "✗ $method ТАЙМАУТ (${CALL_TIMEOUT_MS / 1000}с) — сервер завис, освобождаем очередь для остальных операций")
+                if (log) Logger.log(context, "rclone", "✗ $method ТАЙМАУТ (${CALL_TIMEOUT_MS / 1000}с) — сервер завис, освобождаем очередь для остальных операций")
                 return RpcResult(false, null, "Сервер не отвечает (таймаут ${CALL_TIMEOUT_MS / 1000}с) — возможно, завис или недоступен")
             }
 
             rawError?.let { e ->
-                Logger.log(context, "rclone", "✗ $method exception=${e.message}")
+                if (log) Logger.log(context, "rclone", "✗ $method exception=${e.message}")
                 return RpcResult(false, null, e.message ?: e.javaClass.simpleName)
             }
 
@@ -89,7 +89,7 @@ object RcloneHelper {
             val output = result.output ?: "{}"
             val status = result.status.toInt()
             val json = try { JSONObject(output) } catch (e: Exception) { null }
-            Logger.log(context, "rclone", "← $method status=$status body=$output")
+            if (log) Logger.log(context, "rclone", "← $method status=$status body=$output")
             return if (status in 200..299) {
                 RpcResult(true, json, "OK")
             } else {
@@ -232,8 +232,65 @@ object RcloneHelper {
 
     data class CopyFileResult(val success: Boolean, val message: String, val targetName: String)
 
+    private fun asyncJobId(json: JSONObject?): Long? {
+        val id = json?.optLong("jobid", 0L) ?: 0L
+        return id.takeIf { it > 0L }
+    }
+
+    /** Runs a potentially slow RPC operation as a rclone job and reports core/stats progress. */
+    private fun copyFileAsync(
+        context: Context,
+        body: JSONObject,
+        onProgress: ((bytes: Long, totalBytes: Long) -> Unit)?
+    ): RpcResult {
+        val asyncBody = JSONObject(body.toString()).put("_async", true)
+        val started = call(context, "operations/copyfile", asyncBody)
+        val jobId = asyncJobId(started.json)
+        if (!started.success || jobId == null) {
+            // Старый librclone мог проигнорировать _async и уже выполнить операцию синхронно.
+            // Повторный copyfile здесь опасен: он создаст второй файл или перезапишет первый.
+            return started
+        }
+
+        val deadline = System.currentTimeMillis() + CALL_TIMEOUT_MS
+        while (System.currentTimeMillis() < deadline) {
+            val stats = call(
+                context,
+                "core/stats",
+                JSONObject().put("group", "sharecopy"),
+                log = false
+            )
+            val statsJson = stats.json
+            val bytes = statsJson?.optLong("bytes", 0L) ?: 0L
+            val totalBytes = statsJson?.optLong("totalBytes", 0L) ?: 0L
+            onProgress?.invoke(bytes, totalBytes)
+
+            val status = call(
+                context,
+                "core/jobstatus",
+                JSONObject().put("jobid", jobId),
+                log = false
+            )
+            val statusJson = status.json
+            if (status.success && statusJson?.optBoolean("finished", false) == true) {
+                val success = statusJson.optBoolean("success", false)
+                val error = statusJson.optString("error", "")
+                return if (success) RpcResult(true, statusJson, "OK")
+                else RpcResult(false, statusJson, error.ifBlank { "Асинхронная операция rclone завершилась с ошибкой" })
+            }
+            Thread.sleep(250L)
+        }
+        return RpcResult(false, null, "Таймаут асинхронного копирования (${CALL_TIMEOUT_MS / 1000}с)")
+    }
+
     /** Копирует один локальный файл [localDir]/[localName] в папку [dstFsSpec] (уже вида "remoteName:/путь"), с подбором уникального имени. */
-    fun copyLocalFile(context: Context, localDir: String, localName: String, dstFsSpec: String): CopyFileResult {
+    fun copyLocalFile(
+        context: Context,
+        localDir: String,
+        localName: String,
+        dstFsSpec: String,
+        onProgress: ((bytes: Long, totalBytes: Long) -> Unit)? = null
+    ): CopyFileResult {
         val target = uniqueName(context, dstFsSpec, localName)
         val body = JSONObject().apply {
             put("srcFs", localDir)
@@ -242,7 +299,7 @@ object RcloneHelper {
             put("dstRemote", target)
         }
         mergeInto(body, inplaceConfig())
-        val result = call(context, "operations/copyfile", body)
+        val result = copyFileAsync(context, body, onProgress)
         return CopyFileResult(result.success, result.message, target)
     }
 

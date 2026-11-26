@@ -204,7 +204,13 @@ object FileCopyEngine {
      * реальные файлы (см. ShareTargetActivity) — так сервис копирования не зависит от разрешений
      * на исходный content:// URI, которые Android может отозвать после закрытия экрана-источника.
      */
-    fun uploadStagedFiles(context: Context, files: List<File>, destination: Destination, subfolderName: String?): CopyResult {
+    fun uploadStagedFiles(
+        context: Context,
+        files: List<File>,
+        destination: Destination,
+        subfolderName: String?,
+        onFileProgress: (index: Int, name: String, state: CopyItemState, bytes: Long, totalBytes: Long, error: String?) -> Unit = { _, _, _, _, _, _ -> }
+    ): CopyResult {
         val (type, params, basePath) = rcloneBackendInfo(destination)
             ?: return CopyResult(files.size, 0, emptyList(), files.map { "${it.name} (не настроены параметры подключения)" })
 
@@ -220,26 +226,37 @@ object FileCopyEngine {
 
         var succeeded = 0
         val errors = mutableListOf<String>()
-        for (file in files) {
+        for ((index, file) in files.withIndex()) {
             val dir = file.parentFile?.absolutePath
             if (dir == null) {
                 errors.add("${file.name} (внутренняя ошибка пути)")
+                onFileProgress(index, file.name, CopyItemState.FAILED, 0L, file.length(), "внутренняя ошибка пути")
                 continue
             }
-            var result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec)
+            val totalBytes = file.length()
+            onFileProgress(index, file.name, CopyItemState.COPYING, 0L, totalBytes, null)
+            var result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, statsTotal ->
+                onFileProgress(index, file.name, CopyItemState.COPYING, bytes, maxOf(totalBytes, statsTotal), null)
+            }
             if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
                 RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
-                result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec)
+                result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, statsTotal ->
+                    onFileProgress(index, file.name, CopyItemState.COPYING, bytes, maxOf(totalBytes, statsTotal), null)
+                }
             }
             if (!result.success) {
                 errors.add("${file.name} (${result.message})")
+                onFileProgress(index, file.name, CopyItemState.FAILED, 0L, totalBytes, result.message)
                 continue
             }
             val verified = RcloneHelper.verifyFileExists(context, dstFsSpec, result.targetName)
             if (verified) {
                 succeeded++
+                onFileProgress(index, file.name, CopyItemState.DONE, totalBytes, totalBytes, null)
             } else {
-                errors.add("${file.name} (rclone сообщил об успехе, но независимая проверка не нашла файл на сервере)")
+                val error = "rclone сообщил об успехе, но независимая проверка не нашла файл на сервере"
+                errors.add("${file.name} ($error)")
+                onFileProgress(index, file.name, CopyItemState.FAILED, 0L, totalBytes, error)
             }
         }
         return CopyResult(files.size, succeeded, emptyList(), errors)

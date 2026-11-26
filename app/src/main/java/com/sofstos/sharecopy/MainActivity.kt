@@ -8,6 +8,7 @@ import android.provider.Settings
 import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
+import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -20,6 +21,10 @@ class MainActivity : AppCompatActivity() {
     private lateinit var store: SettingsStore
     private lateinit var adapter: DestinationAdapter
     private lateinit var recycler: RecyclerView
+    private lateinit var copyProgressPanel: View
+    private lateinit var copyProgressText: TextView
+    private lateinit var copyProgressBar: ProgressBar
+    private var unsubscribeProgress: (() -> Unit)? = null
 
     // Если не null — очередной результат SAF-пикера должен заменить treeUri
     // у уже существующей папки назначения с этим id (режим "Изменить папку (SAF)"),
@@ -67,6 +72,9 @@ class MainActivity : AppCompatActivity() {
 
         store = SettingsStore(this)
         recycler = findViewById(R.id.recyclerDestinations)
+        copyProgressPanel = findViewById(R.id.copyProgressPanel)
+        copyProgressText = findViewById(R.id.copyProgressText)
+        copyProgressBar = findViewById(R.id.copyProgressBar)
         recycler.layoutManager = LinearLayoutManager(this)
         adapter = DestinationAdapter(
             store.getDestinations(),
@@ -83,6 +91,50 @@ class MainActivity : AppCompatActivity() {
         }
 
         refreshList()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        unsubscribeProgress = CopyProgressBus.subscribe { progress ->
+            runOnUiThread { renderCopyProgress(progress) }
+        }
+    }
+
+    override fun onStop() {
+        unsubscribeProgress?.invoke()
+        unsubscribeProgress = null
+        super.onStop()
+    }
+
+    private fun renderCopyProgress(progress: CopyProgress) {
+        val show = progress.active || progress.message.isNotBlank()
+        copyProgressPanel.visibility = if (show) View.VISIBLE else View.GONE
+        if (!show) return
+
+        val current = progress.currentItem
+        copyProgressText.text = when {
+            progress.message.isNotBlank() && !progress.active -> progress.message
+            current != null -> {
+                val percent = if (progress.totalBytes > 0L) {
+                    ((progress.copiedBytes * 100L) / progress.totalBytes).coerceIn(0L, 100L)
+                } else null
+                if (percent != null) {
+                    "${progress.operation}: ${current.name} — $percent% (${progress.completedCount}/${progress.items.size})"
+                } else {
+                    "${progress.operation}: ${current.name} (${progress.completedCount}/${progress.items.size})"
+                }
+            }
+            else -> "${progress.operation} → «${progress.destination}»"
+        }
+
+        if (progress.totalBytes > 0L) {
+            copyProgressBar.isIndeterminate = false
+            copyProgressBar.progress = ((progress.copiedBytes * 100L) / progress.totalBytes)
+                .coerceIn(0L, 100L).toInt()
+        } else {
+            copyProgressBar.isIndeterminate = progress.active
+            if (!progress.active) copyProgressBar.progress = if (progress.completedCount == progress.items.size) 100 else 0
+        }
     }
 
     override fun onResume() {

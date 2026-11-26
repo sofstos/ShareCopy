@@ -95,6 +95,12 @@
     <string name="notif_channel_desc">Прогресс и результат копирования на SFTP/Mega</string>
     <string name="notif_progress_title">ShareCopy: %1$s</string>
     <string name="notif_progress_text">%1$s → «%2$s»…</string>
+    <string name="notif_progress_current">Файл %1$d из %2$d: %3$s</string>
+    <string name="notif_progress_summary">Готово: %1$d из %2$d</string>
+    <string name="notif_item_done">Готово: %1$s</string>
+    <string name="notif_item_copying">Копируется: %1$s</string>
+    <string name="notif_item_pending">Ожидает: %1$s</string>
+    <string name="notif_item_failed">Ошибка: %1$s</string>
     <string name="toast_copy_started_background">%1$s началось в фоне — следи за уведомлением</string>
 
     <string name="preparing_files">Подготовка файлов…</string>
