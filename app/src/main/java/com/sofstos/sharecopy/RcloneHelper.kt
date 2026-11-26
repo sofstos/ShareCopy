@@ -26,22 +26,21 @@ import java.util.concurrent.TimeUnit
  * (SettingsStore/Destination), но только если параметры реально изменились — так исключается
  * и риск рассинхронизации, и лишние медленные переподключения.
  *
- * ВАЖНО про параллелизм: если запустить два копирования одновременно, librclone может не быть
- * безопасен для настоящих одновременных вызовов из разных потоков — на практике это приводило
- * к перепутанным логам и ошибкам вида "object not found" на ровном месте. Поэтому ВСЕ вызовы
- * rcloneRPC строго сериализуются через общий lock — параллельные операции встают в очередь.
+ * ВАЖНО про параллелизм: операции копирования запускаются как независимые rclone jobs, поэтому
+ * вызовы operations/*, job/* и core/* не должны стоять в одной глобальной очереди — иначе второй
+ * сервер будет ждать первый. Изменения конфигурации rclone (config/*) сериализуются отдельно,
+ * чтобы два потока не переписывали rclone.conf одновременно.
  *
  * ВАЖНО про зависания: если удалённый сервер отвечает некорректно на уровне протокола, сам
  * вызов к rclone иногда не завершается ВООБЩЕ. Без защиты общая блокировка осталась бы
- * захваченной навсегда, и любая следующая операция (даже на другой, исправный сервер)
- * зависала бы за ней в очереди. Поэтому каждый вызов выполняется в отдельном потоке с
- * таймаутом — если сервер не ответил за отведённое время, вызов считается проваленным и
- * блокировка отпускается (зависший поток при этом просто "утекает" в фоне).
+ * захваченной навсегда. Поэтому каждый вызов выполняется в отдельном потоке с таймаутом —
+ * если сервер не ответил за отведённое время, вызов считается проваленным, а конфигурационная
+ * блокировка освобождается (зависший поток при этом просто "утекает" в фоне).
  */
 object RcloneHelper {
 
     @Volatile private var initialized = false
-    private val rpcLock = Any()
+    private val configRpcLock = Any()
     private const val CALL_TIMEOUT_MS = 10 * 60_000L
 
     @Synchronized
@@ -56,46 +55,52 @@ object RcloneHelper {
 
     fun call(context: Context, method: String, params: JSONObject = JSONObject(), log: Boolean = true): RpcResult {
         ensureInit()
-        synchronized(rpcLock) {
-            if (log) Logger.log(context, "rclone", "→ $method $params")
+        return if (method.startsWith("config/")) {
+            synchronized(configRpcLock) { callUnlocked(context, method, params, log) }
+        } else {
+            callUnlocked(context, method, params, log)
+        }
+    }
 
-            val latch = CountDownLatch(1)
-            var rawResult: RcloneRPCResult? = null
-            var rawError: Throwable? = null
-            val worker = Thread {
-                try {
-                    rawResult = Gomobile.rcloneRPC(method, params.toString())
-                } catch (e: Throwable) {
-                    rawError = e
-                } finally {
-                    latch.countDown()
-                }
-            }
-            worker.isDaemon = true
-            worker.start()
+    private fun callUnlocked(context: Context, method: String, params: JSONObject, log: Boolean): RpcResult {
+        if (log) Logger.log(context, "rclone", "→ $method $params")
 
-            val completed = latch.await(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
-            if (!completed) {
-                if (log) Logger.log(context, "rclone", "✗ $method ТАЙМАУТ (${CALL_TIMEOUT_MS / 1000}с) — сервер завис, освобождаем очередь для остальных операций")
-                return RpcResult(false, null, "Сервер не отвечает (таймаут ${CALL_TIMEOUT_MS / 1000}с) — возможно, завис или недоступен")
+        val latch = CountDownLatch(1)
+        var rawResult: RcloneRPCResult? = null
+        var rawError: Throwable? = null
+        val worker = Thread {
+            try {
+                rawResult = Gomobile.rcloneRPC(method, params.toString())
+            } catch (e: Throwable) {
+                rawError = e
+            } finally {
+                latch.countDown()
             }
+        }
+        worker.isDaemon = true
+        worker.start()
 
-            rawError?.let { e ->
-                if (log) Logger.log(context, "rclone", "✗ $method exception=${e.message}")
-                return RpcResult(false, null, e.message ?: e.javaClass.simpleName)
-            }
+        val completed = latch.await(CALL_TIMEOUT_MS, TimeUnit.MILLISECONDS)
+        if (!completed) {
+            if (log) Logger.log(context, "rclone", "✗ $method ТАЙМАУТ (${CALL_TIMEOUT_MS / 1000}с) — сервер завис, освобождаем очередь для остальных операций")
+            return RpcResult(false, null, "Сервер не отвечает (таймаут ${CALL_TIMEOUT_MS / 1000}с) — возможно, завис или недоступен")
+        }
 
-            val result = rawResult ?: return RpcResult(false, null, "Пустой ответ от rclone")
-            val output = result.output ?: "{}"
-            val status = result.status.toInt()
-            val json = try { JSONObject(output) } catch (e: Exception) { null }
-            if (log) Logger.log(context, "rclone", "← $method status=$status body=$output")
-            return if (status in 200..299) {
-                RpcResult(true, json, "OK")
-            } else {
-                val errMsg = json?.optString("error")?.takeIf { it.isNotBlank() } ?: output
-                RpcResult(false, json, errMsg)
-            }
+        rawError?.let { e ->
+            if (log) Logger.log(context, "rclone", "✗ $method exception=${e.message}")
+            return RpcResult(false, null, e.message ?: e.javaClass.simpleName)
+        }
+
+        val result = rawResult ?: return RpcResult(false, null, "Пустой ответ от rclone")
+        val output = result.output ?: "{}"
+        val status = result.status.toInt()
+        val json = try { JSONObject(output) } catch (e: Exception) { null }
+        if (log) Logger.log(context, "rclone", "← $method status=$status body=$output")
+        return if (status in 200..299) {
+            RpcResult(true, json, "OK")
+        } else {
+            val errMsg = json?.optString("error")?.takeIf { it.isNotBlank() } ?: output
+            RpcResult(false, json, errMsg)
         }
     }
 
@@ -319,6 +324,9 @@ object RcloneHelper {
                 log = true
             )
             val statusJson = status.json
+            if (!status.success && status.message.contains("job not found", ignoreCase = true)) {
+                return RpcResult(false, statusJson, "rclone больше не видит job $jobId — операция завершилась без доступного статуса")
+            }
             if (status.success && statusJson?.optBoolean("finished", false) == true) {
                 val success = statusJson.optBoolean("success", false)
                 val error = statusJson.optString("error", "")
