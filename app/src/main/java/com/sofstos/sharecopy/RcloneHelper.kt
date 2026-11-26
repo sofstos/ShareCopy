@@ -175,14 +175,45 @@ object RcloneHelper {
         return names
     }
 
+    /**
+     * Проверяет один объект без полного листинга каталога.
+     * null означает, что версия/бэкенд rclone не поддерживает stat;
+     * в этом случае вызывающий код использует совместимый fallback на list.
+     */
+    private fun statExists(context: Context, fsSpec: String, name: String): Boolean? {
+        val body = JSONObject().apply {
+            put("fs", fsSpec)
+            put("remote", name)
+        }
+        val result = call(context, "operations/stat", body)
+        if (result.success) return true
+
+        val error = result.message
+        val unsupported = error.contains("method not found", ignoreCase = true) ||
+            error.contains("unknown method", ignoreCase = true) ||
+            error.contains("not implemented", ignoreCase = true) ||
+            error.contains("unsupported", ignoreCase = true)
+        return if (unsupported) null else false
+    }
+
     fun uniqueName(context: Context, fsSpec: String, name: String): String {
-        val existing = listNames(context, fsSpec)
-        if (name !in existing) return name
+        val stat = statExists(context, fsSpec, name)
+        val existing = if (stat == null) listNames(context, fsSpec) else emptySet()
+        if (stat == false || (stat == null && name !in existing)) return name
         val dot = name.lastIndexOf('.')
         val base = if (dot > 0) name.substring(0, dot) else name
         val ext = if (dot > 0) name.substring(dot) else ""
         var i = 1
-        while ("$base ($i)$ext" in existing) i++
+        while (true) {
+            val candidate = "$base ($i)$ext"
+            val candidateExists = if (stat == null) {
+                candidate in existing
+            } else {
+                statExists(context, fsSpec, candidate) == true
+            }
+            if (!candidateExists) break
+            i++
+        }
         return "$base ($i)$ext"
     }
 
@@ -220,7 +251,8 @@ object RcloneHelper {
      * заметно на Mega, где вход в аккаунт сам по себе не мгновенный.
      */
     fun verifyFileExists(context: Context, fsSpec: String, fileName: String): Boolean {
-        val found = listNames(context, fsSpec).contains(fileName)
+        val found = statExists(context, fsSpec, fileName)
+            ?: listNames(context, fsSpec).contains(fileName)
         Logger.log(context, "rclone", "проверка '$fileName' в '$fsSpec' -> found=$found")
         return found
     }

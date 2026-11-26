@@ -16,6 +16,15 @@ import java.util.Locale
 object Logger {
 
     private const val MAX_LINE_LENGTH = 4000
+    /** Маскирует секреты, даже если вызывающий код передал в лог весь JSON RPC-запрос. */
+    private val SECRET_VALUE = Regex(
+        "(?i)(\\\"?(?:pass|password|token|secret|client_secret|access_token|refresh_token)\\\"?\\s*[:=]\\s*)(\\\"(?:\\\\.|[^\\\"\\\\])*\\\"|[^,}\\s]+)"
+    )
+
+    private fun sanitizeSecrets(message: String): String = SECRET_VALUE.replace(message) { match ->
+        val replacement = if (match.groupValues[2].startsWith("\"")) "\"***REDACTED***\"" else "***REDACTED***"
+        match.groupValues[1] + replacement
+    }
 
     @Synchronized
     fun log(context: Context, tag: String, message: String) {
@@ -26,7 +35,8 @@ object Logger {
             val fileName = "ShareCopy_log_" + SimpleDateFormat("yyyy-MM-dd", Locale.US).format(Date()) + ".txt"
             val file = File(dir, fileName)
             val timestamp = SimpleDateFormat("HH:mm:ss.SSS", Locale.US).format(Date())
-            val safeMessage = if (message.length > MAX_LINE_LENGTH) message.take(MAX_LINE_LENGTH) + "…(обрезано)" else message
+            val sanitized = sanitizeSecrets(message)
+            val safeMessage = if (sanitized.length > MAX_LINE_LENGTH) sanitized.take(MAX_LINE_LENGTH) + "…(обрезано)" else sanitized
             FileWriter(file, true).use { writer ->
                 writer.append("[$timestamp] [$tag] $safeMessage\n")
             }
