@@ -79,6 +79,12 @@
 
     <string name="dest_action_open_system">Открыть в системе</string>
     <string name="dest_action_open_fixed_fm">Открыть в фиксированном ФМ</string>
+    <string name="dest_action_test_remote">Проверить сервер и папку</string>
+    <string name="remote_test_started">Проверка сервера и удалённой папки…</string>
+    <string name="remote_test_ok">Сервер доступен, удалённая папка доступна или создана</string>
+    <string name="remote_test_auth_failed">Сервер отвечает, но логин или пароль отклонён: %1$s</string>
+    <string name="remote_test_server_failed">Сервер или порт недоступен: %1$s</string>
+    <string name="remote_test_failed">Не удалось проверить удалённую папку: %1$s</string>
     <string name="dest_action_delete">Удалить</string>
     <string name="error_open_folder_failed">Не удалось открыть папку: %1$s</string>
     <string name="error_fixed_fm_not_set">Сначала выбери фиксированный файловый менеджер в меню ☰</string>

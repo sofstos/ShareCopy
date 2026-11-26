@@ -375,7 +375,7 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
                     val (type, params, _) = FileCopyEngine.rcloneBackendInfo(candidate)!!
-                    val ensured = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params)
+                    val ensured = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params, force = true)
                     val testResult = if (ensured.success) RcloneHelper.testRemotePath(this, "$remoteName:$remotePath") else ensured
                     runOnUiThread {
                         if (testResult.success) {
@@ -451,7 +451,7 @@ class MainActivity : AppCompatActivity() {
                 Thread {
                     val remoteName = RcloneHelper.remoteName(candidate.id)
                     val (type, params, _) = FileCopyEngine.rcloneBackendInfo(candidate)!!
-                    val ensured = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params)
+                    val ensured = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params, force = true)
                     val testResult = if (ensured.success) RcloneHelper.testRemotePath(this, "$remoteName:$remotePath") else ensured
                     runOnUiThread {
                         if (testResult.success) {
@@ -482,6 +482,7 @@ class MainActivity : AppCompatActivity() {
         val canOpenLocally = dest.type == DestType.SAF || dest.type == DestType.MANUAL
         val openSystemView = view.findViewById<TextView>(R.id.actionOpenSystem)
         val openFixedFmView = view.findViewById<TextView>(R.id.actionOpenFixedFm)
+        val testRemoteView = view.findViewById<TextView>(R.id.actionTestRemote)
 
         if (canOpenLocally) {
             openSystemView.setOnClickListener {
@@ -497,12 +498,57 @@ class MainActivity : AppCompatActivity() {
             openSystemView.visibility = View.GONE
             openFixedFmView.visibility = View.GONE
         }
+        if (dest.type == DestType.SFTP || dest.type == DestType.MEGA) {
+            testRemoteView.setOnClickListener {
+                dialog.dismiss()
+                testRemoteDestination(dest)
+            }
+        } else {
+            testRemoteView.visibility = View.GONE
+        }
         view.findViewById<TextView>(R.id.actionDelete).setOnClickListener {
             dialog.dismiss()
             confirmDelete(dest)
         }
 
         dialog.show()
+    }
+
+    private fun testRemoteDestination(destination: Destination) {
+        Toast.makeText(this, R.string.remote_test_started, Toast.LENGTH_SHORT).show()
+        Thread {
+            val result = try {
+                val info = FileCopyEngine.rcloneBackendInfo(destination)
+                if (info == null) {
+                    RcloneHelper.RpcResult(false, null, "не настроены параметры подключения")
+                } else {
+                    val (type, params, basePath) = info
+                    val remoteName = RcloneHelper.remoteName(destination.id)
+                    val ensured = RcloneHelper.ensureRemote(this, remoteName, type, params)
+                    if (ensured.success) {
+                        RcloneHelper.testRemotePath(this, RcloneHelper.fsSpec(remoteName, basePath))
+                    } else ensured
+                }
+            } catch (e: Exception) {
+                RcloneHelper.RpcResult(false, null, e.message ?: e.javaClass.simpleName)
+            }
+            runOnUiThread {
+                if (result.success) {
+                    Toast.makeText(this, R.string.remote_test_ok, Toast.LENGTH_LONG).show()
+                } else {
+                    val error = result.message
+                    val lower = error.lowercase()
+                    val text = when {
+                        listOf("password", "authentication", "permission denied", "access denied", "login")
+                            .any { lower.contains(it) } -> getString(R.string.remote_test_auth_failed, error)
+                        listOf("connection", "connect", "dial", "timeout", "timed out", "refused", "unreachable", "no route")
+                            .any { lower.contains(it) } -> getString(R.string.remote_test_server_failed, error)
+                        else -> getString(R.string.remote_test_failed, error)
+                    }
+                    Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+                }
+            }
+        }.start()
     }
 
     private fun openInSystem(dest: Destination) {

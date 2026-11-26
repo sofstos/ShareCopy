@@ -127,7 +127,9 @@ object RcloneHelper {
             }
         }
 
-        call(context, "config/delete", JSONObject().apply { put("name", name) })
+        if (force) {
+            call(context, "config/delete", JSONObject().apply { put("name", name) })
+        }
 
         val paramsJson = JSONObject()
         for ((k, v) in params) paramsJson.put(k, v)
@@ -146,6 +148,46 @@ object RcloneHelper {
             synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
         }
         return result
+    }
+
+    /**
+     * Restores a remote from the persistent RCLONE_CONFIG without deleting it first.
+     * The remote is created only when it is absent from rclone's config.
+     */
+    fun ensureRemote(context: Context, name: String, type: String, params: Map<String, String>): RpcResult {
+        val fingerprint = paramsFingerprint(type, params)
+        synchronized(createdRemotes) {
+            if (createdRemotes[name] == fingerprint) return RpcResult(true, null, "OK (переиспользован)")
+        }
+
+        val listed = call(context, "config/listremotes", log = false)
+        val remotes = listed.json?.optJSONArray("remotes")
+        if (listed.success && remotes != null) {
+            for (i in 0 until remotes.length()) {
+                if (remotes.optString(i) == name) {
+                    synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
+                    Logger.log(context, "rclone", "remote '$name' восстановлен из постоянного конфига")
+                    return RpcResult(true, null, "OK (из конфига)")
+                }
+            }
+        }
+
+        return createOrReplaceRemote(context, name, type, params, force = false)
+    }
+
+    /** Восстанавливает remotes для уже сохранённых SFTP/Mega-назначений в фоне при старте процесса. */
+    fun restoreConfiguredRemotes(context: Context) {
+        val destinations = SettingsStore(context).getDestinations()
+        for (destination in destinations) {
+            if (destination.type != DestType.SFTP && destination.type != DestType.MEGA) continue
+            val info = FileCopyEngine.rcloneBackendInfo(destination) ?: continue
+            val (type, params, _) = info
+            try {
+                ensureRemote(context, remoteName(destination.id), type, params)
+            } catch (e: Exception) {
+                Logger.log(context, "rclone", "не удалось восстановить remote '${destination.name}': ${e.message}")
+            }
+        }
     }
 
     /** Проверяет, что [fsSpec] (уже вида "remoteName:/путь") реально доступен — пробует создать/проверить папку. */

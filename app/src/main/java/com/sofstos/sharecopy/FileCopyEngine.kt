@@ -239,7 +239,7 @@ object FileCopyEngine {
                 onFileProgress(index, file.name, CopyItemState.COPYING, bytes, maxOf(totalBytes, statsTotal), null)
             }
             if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
-                RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+                RcloneHelper.ensureRemote(context, remoteName, type, params)
                 result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, statsTotal ->
                     onFileProgress(index, file.name, CopyItemState.COPYING, bytes, maxOf(totalBytes, statsTotal), null)
                 }
@@ -280,7 +280,7 @@ object FileCopyEngine {
 
             var result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFsSpec)
             if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
-                RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+                RcloneHelper.ensureRemote(context, remoteName, type, params)
                 result = RcloneHelper.copyLocalFile(context, tempDir.absolutePath, name, dstFsSpec)
             }
             if (!result.success) return false
@@ -362,7 +362,7 @@ object FileCopyEngine {
 
         var result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, dstFsSpec, move)
         if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
-            RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+            RcloneHelper.ensureRemote(context, remoteName, type, params)
             result = RcloneHelper.copyLocalFolder(context, srcRoot.absolutePath, srcRoot.name, dstFsSpec, move)
         }
         if (!result.success) return FolderCopyResult(false, result.message)

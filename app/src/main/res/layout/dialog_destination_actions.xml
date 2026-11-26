@@ -35,6 +35,20 @@
         android:textSize="15sp" />
 
     <TextView
+        android:id="@+id/actionTestRemote"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:background="@drawable/focusable_row_bg"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="14dp"
+        android:layout_margin="4dp"
+        android:focusable="true"
+        android:clickable="true"
+        android:text="@string/dest_action_test_remote"
+        android:textColor="@color/text_primary"
+        android:textSize="15sp" />
+
+    <TextView
         android:id="@+id/actionDelete"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
