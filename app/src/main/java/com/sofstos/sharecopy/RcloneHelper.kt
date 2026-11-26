@@ -186,7 +186,11 @@ object RcloneHelper {
             put("remote", name)
         }
         val result = call(context, "operations/stat", body)
-        if (result.success) return true
+        if (result.success) {
+            // rclone возвращает HTTP 200 и {"item": null}, когда объект не найден.
+            // HTTP-код сам по себе поэтому не означает, что файл существует.
+            return !(result.json?.has("item") == true && result.json.isNull("item"))
+        }
 
         val error = result.message
         val unsupported = error.contains("method not found", ignoreCase = true) ||
