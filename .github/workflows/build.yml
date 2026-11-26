@@ -29,7 +29,9 @@ jobs:
             SDKMANAGER="$(command -v sdkmanager)"
           fi
           echo "Using sdkmanager: $SDKMANAGER"
-          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1
+          # sdkmanager завершает чтение после последней лицензии, поэтому yes
+          # получает ожидаемый Broken pipe; это не должно ломать шаг при pipefail.
+          yes | "$SDKMANAGER" --licenses >/dev/null 2>&1 || true
           "$SDKMANAGER" "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
       - name: Set up Gradle
