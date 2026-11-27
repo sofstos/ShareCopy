@@ -306,7 +306,10 @@ object RcloneHelper {
             val stats = call(
                 context,
                 "core/stats",
-                JSONObject().put("group", "sharecopy"),
+                // У каждого async-job rclone есть собственная группа вида job/<id>.
+                // Общая группа давала сумму старых и параллельных передач, из-за чего
+                // для файла в несколько мегабайт отображались гигабайты.
+                JSONObject().put("group", "job/$jobId"),
                 log = false
             )
             val statsJson = stats.json

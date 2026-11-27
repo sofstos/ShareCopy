@@ -235,13 +235,15 @@ object FileCopyEngine {
             }
             val totalBytes = file.length()
             onFileProgress(index, file.name, CopyItemState.COPYING, 0L, totalBytes, null)
-            var result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, statsTotal ->
-                onFileProgress(index, file.name, CopyItemState.COPYING, bytes, maxOf(totalBytes, statsTotal), null)
+            var result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, _ ->
+                // Прогресс этого экземпляра не может быть больше конкретного файла.
+                // Это также защищает UI от общего/устаревшего счётчика rclone stats.
+                onFileProgress(index, file.name, CopyItemState.COPYING, bytes.coerceIn(0L, totalBytes), totalBytes, null)
             }
             if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
                 RcloneHelper.ensureRemote(context, remoteName, type, params)
-                result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, statsTotal ->
-                    onFileProgress(index, file.name, CopyItemState.COPYING, bytes, maxOf(totalBytes, statsTotal), null)
+                result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, _ ->
+                    onFileProgress(index, file.name, CopyItemState.COPYING, bytes.coerceIn(0L, totalBytes), totalBytes, null)
                 }
             }
             if (!result.success) {
