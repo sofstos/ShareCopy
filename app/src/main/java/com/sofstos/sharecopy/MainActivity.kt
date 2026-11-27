@@ -153,6 +153,9 @@ class MainActivity : AppCompatActivity() {
             detailsDialog = null
         }
         detailsDialog?.show()
+        // Сначала отрисовываем уже имеющееся состояние. Это важно, если окно открыто
+        // между двумя callback прогресса или сразу после возврата из другого Activity.
+        renderCopyDetails(CopyProgressBus.current(), text)
         unsubscribeDetails = CopyProgressBus.subscribe { overview ->
             runOnUiThread { detailsText?.let { renderCopyDetails(overview, it) } }
         }

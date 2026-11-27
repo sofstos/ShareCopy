@@ -11,8 +11,8 @@ android {
         applicationId = "com.sofstos.sharecopy"
         minSdk = 30
         targetSdk = 34
-        versionCode = 24
-        versionName = "2.9"
+        versionCode = 25
+        versionName = "2.10"
     }
 
     buildTypes {
