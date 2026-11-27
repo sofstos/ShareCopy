@@ -1,0 +1,105 @@
+=== librclone.aar exists? ===
+-rw-r--r-- 1 runner runner 25422613 Nov 26 10:40 app/libs/librclone.aar
+=== Archive contents ===
+Archive:  app/libs/librclone.aar
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+      147  1980-00-00 00:00   AndroidManifest.xml
+       58  1980-00-00 00:00   proguard.txt
+    11150  1980-00-00 00:00   classes.jar
+ 79356096  1980-00-00 00:00   jni/arm64-v8a/libgojni.so
+        0  1980-00-00 00:00   R.txt
+        0  1980-00-00 00:00   res/
+---------                     -------
+ 79367451                     6 files
+=== Extracting classes.jar and dumping public API ===
+classes.jar path: /tmp/aar_extract/classes.jar
+=== All class names containing 'rclone' or 'Gomobile' ===
+      519  1980-00-00 00:00   org/rclone/gomobile/Gomobile.class
+     1697  1980-00-00 00:00   org/rclone/gomobile/RcloneRPCResult.class
+=== javap dump of likely main class ===
+--- trying org.rclone.gomobile.Gomobile ---
+Compiled from "Gomobile.java"
+public abstract class org.rclone.gomobile.Gomobile {
+  private org.rclone.gomobile.Gomobile();
+  public static void touch();
+  private static native void _init();
+  public static native void rcloneFinalize();
+  public static native void rcloneInitialize();
+  public static native org.rclone.gomobile.RcloneRPCResult rcloneRPC(java.lang.String, java.lang.String);
+  static {};
+}
+--- trying org.rclone.Gomobile ---
+Error: class not found: org.rclone.Gomobile
+=== GRADLE BUILD ===
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/9.9.2/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :app:checkKotlinGradlePluginConfigurationErrors
+> Task :app:dataBindingMergeDependencyArtifactsDebug
+> Task :app:generateDebugResValues
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:checkDebugAarMetadata
+> Task :app:mapDebugSourceSetPaths
+> Task :app:parseDebugLocalResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:dataBindingGenBaseClassesDebug
+> Task :app:extractDeepLinksDebug
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :app:javaPreCompileDebug
+> Task :app:mergeDebugShaders
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :app:mergeDebugAssets
+> Task :app:compressDebugAssets
+> Task :app:mergeDebugStartupProfile
+> Task :app:mergeDebugJniLibFolders
+> Task :app:checkDebugDuplicateClasses
+> Task :app:mergeLibDexDebug
+> Task :app:mergeDebugNativeLibs
+> Task :app:processDebugResources
+> Task :app:validateSigningDebug
+> Task :app:desugarDebugFileDependencies
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+
+> Task :app:stripDebugDebugSymbols
+Unable to strip the following libraries, packaging them as they are: libgojni.so.
+
+> Task :app:mergeExtDexDebug
+
+> Task :app:compileDebugKotlin
+w: file:///home/runner/work/ShareCopy/ShareCopy/app/src/main/java/com/sofstos/sharecopy/MainActivity.kt:497:33 Condition 'existing != null' is always 'false'
+w: file:///home/runner/work/ShareCopy/ShareCopy/app/src/main/java/com/sofstos/sharecopy/MainActivity.kt:606:33 Condition 'existing != null' is always 'false'
+w: file:///home/runner/work/ShareCopy/ShareCopy/app/src/main/java/com/sofstos/sharecopy/ScreenshotHelper.kt:17:25 Parameter 'context' is never used
+w: file:///home/runner/work/ShareCopy/ShareCopy/app/src/main/java/com/sofstos/sharecopy/ScreenshotHelper.kt:91:78 'MOVE_TO_FOREGROUND: Int' is deprecated. Deprecated in Java
+w: file:///home/runner/work/ShareCopy/ShareCopy/app/src/main/java/com/sofstos/sharecopy/ShareTargetActivity.kt:122:21 Annotations on block-level expressions are being parsed differently depending on presence of a new line after them. Use new line if whole block-level expression must be annotated or wrap annotated expression in parentheses
+
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :app:processDebugJavaRes
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJavaResource
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+gradle/actions: Writing build results to /home/runner/work/_temp/.gradle-actions/build-results/build-1795802253946.json
+
+[Incubating] Problems report is available at: file:///home/runner/work/ShareCopy/ShareCopy/build/reports/problems/problems-report.html
+
+Deprecated Gradle features were used in this build, making it incompatible with Gradle 10.
+
+You can use '--warning-mode all' to show the individual deprecation warnings and determine if they come from your own scripts or plugins.
+
+For more on this, please refer to https://docs.gradle.org/9.9.2/userguide/command_line_interface.html#sec:command_line_warnings in the Gradle documentation.
+
+BUILD SUCCESSFUL in 48s
+40 actionable tasks: 40 executed
+Consider enabling configuration cache to speed up this build: https://docs.gradle.org/9.9.2/userguide/configuration_cache_enabling.html
