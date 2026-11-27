@@ -28,6 +28,12 @@ import kotlin.math.min
  */
 class RcloneCopyService : Service() {
 
+    private data class SpeedTracker(
+        var lastAtMs: Long = System.currentTimeMillis(),
+        var lastBytes: Long = 0L,
+        var bytesPerSecond: Long = 0L
+    )
+
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -46,8 +52,10 @@ class RcloneCopyService : Service() {
         val dest = destId?.let { id -> SettingsStore(this).getDestinations().firstOrNull { it.id == id } }
         val opWord = getString(if (move) R.string.op_move else R.string.op_copy)
         val destName = dest?.name ?: "?"
+        val progressInstanceId = "${startId}-${System.nanoTime()}"
+        val speedTracker = SpeedTracker()
 
-        val initialProgress = CopyProgress(active = true, operation = opWord, destination = destName)
+        val initialProgress = CopyProgress(instanceId = progressInstanceId, active = true, operation = opWord, destination = destName)
         CopyProgressBus.publish(initialProgress)
         startForeground(FOREGROUND_NOTIF_ID, buildProgressNotification(initialProgress))
         val resultNotifId = FOREGROUND_NOTIF_ID + startId
@@ -56,9 +64,16 @@ class RcloneCopyService : Service() {
         val stagingDirPath = intent.getStringExtra(EXTRA_STAGING_DIR)
 
         Thread {
-            val (success, resultText) = runCopy(intent, dest, move, opWord, destName)
+            val (success, resultText) = runCopy(intent, dest, move, opWord, destName, progressInstanceId, speedTracker)
             Logger.log(this, "service", "done success=$success text=$resultText")
-            val completedState = CopyProgressBus.current().copy(active = false, message = resultText)
+            val completedState = CopyProgress(
+                instanceId = progressInstanceId,
+                active = false,
+                operation = opWord,
+                destination = destName,
+                message = resultText,
+                speedBytesPerSecond = 0L
+            )
             CopyProgressBus.publish(completedState)
 
             if (success) VibrationHelper.success(applicationContext) else VibrationHelper.error(applicationContext)
@@ -72,13 +87,21 @@ class RcloneCopyService : Service() {
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
             Thread.sleep(8_000L)
-            if (!CopyProgressBus.current().active) CopyProgressBus.clear()
+            CopyProgressBus.remove(progressInstanceId)
         }.start()
 
         return START_NOT_STICKY
     }
 
-    private fun runCopy(intent: Intent, dest: Destination?, move: Boolean, opWord: String, destName: String): Pair<Boolean, String> {
+    private fun runCopy(
+        intent: Intent,
+        dest: Destination?,
+        move: Boolean,
+        opWord: String,
+        destName: String,
+        instanceId: String,
+        speedTracker: SpeedTracker
+    ): Pair<Boolean, String> {
         if (dest == null) {
             return false to getString(R.string.error_no_destinations)
         }
@@ -87,10 +110,10 @@ class RcloneCopyService : Service() {
         if (isFolder) {
             val folderPath = intent.getStringExtra(EXTRA_FOLDER_PATH) ?: ""
             val folderUseRoot = intent.getBooleanExtra(EXTRA_FOLDER_USE_ROOT, false)
-            publishProgress(opWord, destName, listOf(CopyItemProgress(File(folderPath).name.ifBlank { "папка" }, CopyItemState.COPYING)), 0)
+            publishProgress(instanceId, speedTracker, opWord, destName, listOf(CopyItemProgress(File(folderPath).name.ifBlank { "папка" }, CopyItemState.COPYING)), 0)
             val result = FileCopyEngine.runFolder(applicationContext, folderPath, folderUseRoot, dest, move)
             val state = if (result.success) CopyItemState.DONE else CopyItemState.FAILED
-            publishProgress(opWord, destName, listOf(CopyItemProgress(File(folderPath).name.ifBlank { "папка" }, state)), 0, result.message)
+            publishProgress(instanceId, speedTracker, opWord, destName, listOf(CopyItemProgress(File(folderPath).name.ifBlank { "папка" }, state)), 0, result.message)
             val text = if (result.success) getString(R.string.folder_result_ok, opWord, destName)
                        else getString(R.string.folder_result_fail, opWord, result.message)
             return result.success to text
@@ -107,12 +130,12 @@ class RcloneCopyService : Service() {
         val stagingDir = File(stagingDirPath)
         val files = fileNames.map { File(stagingDir, it) }.filter { it.exists() }
         val progressItems = files.map { CopyItemProgress(it.name) }.toMutableList()
-        publishProgress(opWord, destName, progressItems, -1, "Подготовка сетевого копирования")
+        publishProgress(instanceId, speedTracker, opWord, destName, progressItems, -1, "Подготовка сетевого копирования")
         val result = FileCopyEngine.uploadStagedFiles(applicationContext, files, dest, subfolder) { index, name, state, bytes, totalBytes, error ->
             if (index in progressItems.indices) {
                 progressItems[index] = CopyItemProgress(name, state, min(bytes, totalBytes.takeIf { it > 0L } ?: bytes), totalBytes, error)
             }
-            publishProgress(opWord, destName, progressItems, index)
+            publishProgress(instanceId, speedTracker, opWord, destName, progressItems, index)
         }
 
         val success = result.total > 0 && result.succeeded == result.total
@@ -128,6 +151,8 @@ class RcloneCopyService : Service() {
     }
 
     private fun publishProgress(
+        instanceId: String,
+        speedTracker: SpeedTracker,
         operation: String,
         destination: String,
         items: List<CopyItemProgress>,
@@ -135,16 +160,29 @@ class RcloneCopyService : Service() {
         message: String = ""
     ) {
         val progress = CopyProgress(
+            instanceId = instanceId,
             active = true,
             operation = operation,
             destination = destination,
             items = items.toList(),
             currentIndex = currentIndex,
-            message = message
+            message = message,
+            speedBytesPerSecond = updateSpeed(speedTracker, items.sumOf { it.bytes })
         )
         CopyProgressBus.publish(progress)
         val manager = getSystemService(NotificationManager::class.java)
         manager?.notify(FOREGROUND_NOTIF_ID, buildProgressNotification(progress))
+    }
+
+    private fun updateSpeed(tracker: SpeedTracker, copiedBytes: Long): Long {
+        val now = System.currentTimeMillis()
+        val elapsed = now - tracker.lastAtMs
+        if (elapsed >= 250L) {
+            tracker.bytesPerSecond = ((copiedBytes - tracker.lastBytes).coerceAtLeast(0L) * 1000L) / elapsed
+            tracker.lastAtMs = now
+            tracker.lastBytes = copiedBytes
+        }
+        return tracker.bytesPerSecond
     }
 
     /** Дописывает к тексту результата конкретные причины ошибок (укорачивая при необходимости). */

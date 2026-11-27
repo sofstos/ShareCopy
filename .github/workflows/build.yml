@@ -144,14 +144,14 @@ jobs:
             # Release assets отдаются через release-assets.githubusercontent.com, а не через
             # тот же Azure Blob, что блокировал обычные Actions-артефакты и логи джобов.
             VERSION="${{ steps.version.outputs.name }}"
+            RELEASE_TAG="v${VERSION}-build-${{ github.run_number }}"
             APK_NAME="ShareCopy-v${VERSION}.apk"
             cp "app/build/outputs/apk/debug/app-debug.apk" "app/build/outputs/apk/debug/$APK_NAME"
-            gh release delete latest-build --yes --cleanup-tag --repo "${{ github.repository }}" || true
-            gh release create latest-build "app/build/outputs/apk/debug/$APK_NAME" \
+            gh release create "$RELEASE_TAG" "app/build/outputs/apk/debug/$APK_NAME" \
               --repo "${{ github.repository }}" \
               --target "${{ github.sha }}" \
               --title "ShareCopy v${VERSION} (сборка ${{ github.run_number }})" \
-              --notes "Версия ${VERSION}. Автоматическая сборка из коммита ${{ github.sha }}"
+              --notes "Версия ${VERSION}. Автоматическая сборка из коммита ${{ github.sha }}. Старые релизы не изменяются."
           } 2>&1 | tee /tmp/release.log
 
       - name: Publish build log to apk-output branch

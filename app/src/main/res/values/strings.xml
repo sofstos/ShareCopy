@@ -15,6 +15,7 @@
     <string name="checkbox_use_root">Использовать root (su) для записи</string>
     <string name="btn_save">Сохранить</string>
     <string name="btn_cancel">Отмена</string>
+    <string name="btn_close">Закрыть</string>
     <string name="btn_delete">Удалить</string>
 
     <string name="pick_destination_title">Куда скопировать?</string>

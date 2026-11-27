@@ -9,6 +9,7 @@ import android.view.View
 import android.widget.CheckBox
 import android.widget.EditText
 import android.widget.ProgressBar
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
@@ -25,6 +26,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var copyProgressText: TextView
     private lateinit var copyProgressBar: ProgressBar
     private var unsubscribeProgress: (() -> Unit)? = null
+    private var unsubscribeDetails: (() -> Unit)? = null
+    private var detailsDialog: AlertDialog? = null
+    private var detailsText: TextView? = null
 
     // Если не null — очередной результат SAF-пикера должен заменить treeUri
     // у уже существующей папки назначения с этим id (режим "Изменить папку (SAF)"),
@@ -75,6 +79,7 @@ class MainActivity : AppCompatActivity() {
         copyProgressPanel = findViewById(R.id.copyProgressPanel)
         copyProgressText = findViewById(R.id.copyProgressText)
         copyProgressBar = findViewById(R.id.copyProgressBar)
+        copyProgressPanel.setOnClickListener { showCopyDetailsDialog() }
         recycler.layoutManager = LinearLayoutManager(this)
         adapter = DestinationAdapter(
             store.getDestinations(),
@@ -106,36 +111,92 @@ class MainActivity : AppCompatActivity() {
         super.onStop()
     }
 
-    private fun renderCopyProgress(progress: CopyProgress) {
-        val show = progress.active || progress.message.isNotBlank()
+    private fun renderCopyProgress(progress: CopyProgressOverview) {
+        val show = progress.active || progress.instances.any { it.message.isNotBlank() }
         copyProgressPanel.visibility = if (show) View.VISIBLE else View.GONE
         if (!show) return
 
-        val current = progress.currentItem
-        copyProgressText.text = when {
-            progress.message.isNotBlank() && !progress.active -> progress.message
-            current != null -> {
-                val percent = if (progress.totalBytes > 0L) {
-                    ((progress.copiedBytes * 100L) / progress.totalBytes).coerceIn(0L, 100L)
-                } else null
-                if (percent != null) {
-                    "${progress.operation}: ${current.name} — $percent% (${progress.completedCount}/${progress.items.size})"
-                } else {
-                    "${progress.operation}: ${current.name} (${progress.completedCount}/${progress.items.size})"
-                }
-            }
-            else -> "${progress.operation} → «${progress.destination}»"
-        }
+        val percent = if (progress.totalBytes > 0L)
+            ((progress.copiedBytes * 100L) / progress.totalBytes).coerceIn(0L, 100L)
+        else 0L
+        val activeCount = progress.instances.count { it.active }
+        copyProgressText.text = "Копирование: $activeCount активн. — ${formatBytes(progress.copiedBytes)} из ${formatBytes(progress.totalBytes)}, осталось ${formatBytes(progress.remainingBytes)}, ${formatSpeed(progress.speedBytesPerSecond)}"
 
         if (progress.totalBytes > 0L) {
             copyProgressBar.isIndeterminate = false
-            copyProgressBar.progress = ((progress.copiedBytes * 100L) / progress.totalBytes)
-                .coerceIn(0L, 100L).toInt()
+            copyProgressBar.progress = percent.toInt()
         } else {
             copyProgressBar.isIndeterminate = progress.active
-            if (!progress.active) copyProgressBar.progress = if (progress.completedCount == progress.items.size) 100 else 0
+            if (!progress.active) copyProgressBar.progress = 100
+        }
+        detailsText?.let { renderCopyDetails(progress, it) }
+    }
+
+    private fun showCopyDetailsDialog() {
+        if (detailsDialog?.isShowing == true) return
+        val text = TextView(this).apply {
+            setPadding(32, 8, 32, 16)
+            setTextColor(getColor(R.color.text_primary))
+            textSize = 14f
+        }
+        detailsText = text
+        val scroll = ScrollView(this).apply { addView(text) }
+        detailsDialog = AlertDialog.Builder(this)
+            .setTitle("Подробности копирования")
+            .setView(scroll)
+            .setPositiveButton(R.string.btn_close, null)
+            .create()
+        detailsDialog?.setOnDismissListener {
+            unsubscribeDetails?.invoke()
+            unsubscribeDetails = null
+            detailsText = null
+            detailsDialog = null
+        }
+        detailsDialog?.show()
+        unsubscribeDetails = CopyProgressBus.subscribe { overview ->
+            runOnUiThread { detailsText?.let { renderCopyDetails(overview, it) } }
         }
     }
+
+    private fun renderCopyDetails(overview: CopyProgressOverview, target: TextView) {
+        if (overview.instances.isEmpty()) {
+            target.text = "Нет активных копирований"
+            return
+        }
+        val builder = StringBuilder()
+        overview.instances.forEachIndexed { index, instance ->
+            val percent = if (instance.totalBytes > 0L)
+                ((instance.copiedBytes * 100L) / instance.totalBytes).coerceIn(0L, 100L)
+            else 0L
+            builder.append("${index + 1}. ${instance.operation} → ${instance.destination}\n")
+            builder.append("   ${if (instance.active) "Выполняется" else instance.message.ifBlank { "Завершено" }}; ")
+            builder.append("$percent%, отправлено ${formatBytes(instance.copiedBytes)} из ${formatBytes(instance.totalBytes)}, ")
+            builder.append("осталось ${formatBytes(instance.remainingBytes)}, ${formatSpeed(instance.speedBytesPerSecond)}\n")
+            instance.items.forEach { item ->
+                val state = when (item.state) {
+                    CopyItemState.PENDING -> "ожидает"
+                    CopyItemState.COPYING -> "копируется"
+                    CopyItemState.DONE -> "готово"
+                    CopyItemState.FAILED -> "ошибка"
+                }
+                builder.append("   • ${item.name}: $state, ${formatBytes(item.bytes)} из ${formatBytes(item.totalBytes)}\n")
+                item.error?.takeIf { it.isNotBlank() }?.let { builder.append("     $it\n") }
+            }
+            if (index < overview.instances.lastIndex) builder.append("\n")
+        }
+        target.text = builder.toString()
+    }
+
+    private fun formatBytes(value: Long): String {
+        if (value < 1024L) return "$value Б"
+        val units = arrayOf("КБ", "МБ", "ГБ")
+        var number = value.toDouble()
+        var unit = 0
+        while (number >= 1024 && unit < units.lastIndex) { number /= 1024; unit++ }
+        return String.format(java.util.Locale.US, "%.1f %s", number, units[unit])
+    }
+
+    private fun formatSpeed(value: Long): String = if (value > 0L) "${formatBytes(value)}/с" else "скорость —"
 
     override fun onResume() {
         super.onResume()
