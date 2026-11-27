@@ -444,6 +444,43 @@ class MainActivity : AppCompatActivity() {
                     sftpRemotePath = remotePath
                 )
 
+                if (existing != null) {
+                    // Редактирование настроек не должно зависеть от доступности сервера.
+                    // Особенно важно для изменения только названия: раньше здесь запускался
+                    // config/create, кнопка блокировалась, а новое имя не сохранялось.
+                    store.updateDestination(candidate)
+                    refreshList()
+                    dialog.dismiss()
+
+                    val connectionChanged = existing.sftpHost != candidate.sftpHost ||
+                        existing.sftpPort != candidate.sftpPort ||
+                        existing.sftpUser != candidate.sftpUser ||
+                        existing.sftpPassword != candidate.sftpPassword
+                    val pathChanged = existing.sftpRemotePath != candidate.sftpRemotePath
+                    if (connectionChanged || pathChanged) {
+                        Thread {
+                            val remoteName = RcloneHelper.remoteName(candidate.id)
+                            val (type, params, _) = FileCopyEngine.rcloneBackendInfo(candidate)!!
+                            val ensured = if (connectionChanged) {
+                                RcloneHelper.createOrReplaceRemote(this, remoteName, type, params, force = true)
+                            } else {
+                                RcloneHelper.ensureRemote(this, remoteName, type, params)
+                            }
+                            val result = if (ensured.success) {
+                                RcloneHelper.testRemotePath(this, RcloneHelper.fsSpec(remoteName, candidate.sftpRemotePath ?: "/"))
+                            } else ensured
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this,
+                                    if (result.success) "Подключение проверено" else "Проверка не удалась: ${result.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }.start()
+                    }
+                    return@setOnClickListener
+                }
+
                 // Блокируем кнопку И закрытие диалога (свайп назад/тап мимо) на время проверки —
                 // иначе повторные нажатия создают несколько одинаковых записей, а закрытие
                 // диалога до завершения проверки выглядит так, будто ничего не произошло.
@@ -522,6 +559,39 @@ class MainActivity : AppCompatActivity() {
                     megaPassword = password,
                     megaRemotePath = remotePath
                 )
+
+                if (existing != null) {
+                    // Сохраняем локальные изменения независимо от состояния Mega.
+                    store.updateDestination(candidate)
+                    refreshList()
+                    dialog.dismiss()
+
+                    val connectionChanged = existing.megaUser != candidate.megaUser ||
+                        existing.megaPassword != candidate.megaPassword
+                    val pathChanged = existing.megaRemotePath != candidate.megaRemotePath
+                    if (connectionChanged || pathChanged) {
+                        Thread {
+                            val remoteName = RcloneHelper.remoteName(candidate.id)
+                            val (type, params, _) = FileCopyEngine.rcloneBackendInfo(candidate)!!
+                            val ensured = if (connectionChanged) {
+                                RcloneHelper.createOrReplaceRemote(this, remoteName, type, params, force = true)
+                            } else {
+                                RcloneHelper.ensureRemote(this, remoteName, type, params)
+                            }
+                            val result = if (ensured.success) {
+                                RcloneHelper.testRemotePath(this, RcloneHelper.fsSpec(remoteName, candidate.megaRemotePath ?: ""))
+                            } else ensured
+                            runOnUiThread {
+                                Toast.makeText(
+                                    this,
+                                    if (result.success) "Подключение проверено" else "Проверка не удалась: ${result.message}",
+                                    Toast.LENGTH_LONG
+                                ).show()
+                            }
+                        }.start()
+                    }
+                    return@setOnClickListener
+                }
 
                 saveButton.isEnabled = false
                 dialog.setCancelable(false)
@@ -603,9 +673,16 @@ class MainActivity : AppCompatActivity() {
                     val (type, params, basePath) = info
                     val remoteName = RcloneHelper.remoteName(destination.id)
                     val ensured = RcloneHelper.ensureRemote(this, remoteName, type, params)
-                    if (ensured.success) {
+                    var test = if (ensured.success) {
                         RcloneHelper.testRemotePath(this, RcloneHelper.fsSpec(remoteName, basePath))
                     } else ensured
+                    if (!test.success && RcloneHelper.isMissingRemoteError(test.message)) {
+                        val recreated = RcloneHelper.createOrReplaceRemote(this, remoteName, type, params, force = true)
+                        test = if (recreated.success) {
+                            RcloneHelper.testRemotePath(this, RcloneHelper.fsSpec(remoteName, basePath))
+                        } else recreated
+                    }
+                    test
                 }
             } catch (e: Exception) {
                 RcloneHelper.RpcResult(false, null, e.message ?: e.javaClass.simpleName)
