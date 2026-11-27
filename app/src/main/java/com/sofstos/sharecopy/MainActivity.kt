@@ -134,13 +134,26 @@ class MainActivity : AppCompatActivity() {
 
     private fun showCopyDetailsDialog() {
         if (detailsDialog?.isShowing == true) return
+        val initialOverview = CopyProgressBus.current()
         val text = TextView(this).apply {
             setPadding(32, 8, 32, 16)
             setTextColor(getColor(R.color.text_primary))
             textSize = 14f
+            // На некоторых прошивках пустой child ScrollView получает высоту 0
+            // во время первого измерения AlertDialog. Формируем содержимое заранее
+            // и задаём минимальную высоту, чтобы последующий setText был виден.
+            minHeight = (120 * resources.displayMetrics.density).toInt()
+            layoutParams = ScrollView.LayoutParams(
+                ScrollView.LayoutParams.MATCH_PARENT,
+                ScrollView.LayoutParams.WRAP_CONTENT
+            )
         }
+        renderCopyDetails(initialOverview, text)
         detailsText = text
-        val scroll = ScrollView(this).apply { addView(text) }
+        val scroll = ScrollView(this).apply {
+            isFillViewport = true
+            addView(text)
+        }
         detailsDialog = AlertDialog.Builder(this)
             .setTitle("Подробности копирования")
             .setView(scroll)
@@ -153,8 +166,7 @@ class MainActivity : AppCompatActivity() {
             detailsDialog = null
         }
         detailsDialog?.show()
-        // Сначала отрисовываем уже имеющееся состояние. Это важно, если окно открыто
-        // между двумя callback прогресса или сразу после возврата из другого Activity.
+        // Состояние могло измениться между initialOverview и созданием окна.
         renderCopyDetails(CopyProgressBus.current(), text)
         unsubscribeDetails = CopyProgressBus.subscribe { overview ->
             runOnUiThread { detailsText?.let { renderCopyDetails(overview, it) } }

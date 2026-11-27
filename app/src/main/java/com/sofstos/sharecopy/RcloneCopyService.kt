@@ -133,7 +133,17 @@ class RcloneCopyService : Service() {
         publishProgress(instanceId, speedTracker, opWord, destName, progressItems, -1, "Подготовка сетевого копирования")
         val result = FileCopyEngine.uploadStagedFiles(applicationContext, files, dest, subfolder) { index, name, state, bytes, totalBytes, error ->
             if (index in progressItems.indices) {
-                progressItems[index] = CopyItemProgress(name, state, min(bytes, totalBytes.takeIf { it > 0L } ?: bytes), totalBytes, error)
+                // Для UI используем размер фактического staged-файла, а не любой
+                // внешний/rclone-счётчик. Это сохраняет правильный общий объём.
+                val localTotal = files[index].length()
+                val safeTotal = localTotal.takeIf { it >= 0L } ?: totalBytes
+                progressItems[index] = CopyItemProgress(
+                    name,
+                    state,
+                    min(bytes, safeTotal.takeIf { it > 0L } ?: bytes),
+                    safeTotal,
+                    error
+                )
             }
             publishProgress(instanceId, speedTracker, opWord, destName, progressItems, index)
         }
