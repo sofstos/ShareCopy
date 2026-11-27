@@ -179,6 +179,15 @@ class RcloneCopyService : Service() {
             message = message,
             speedBytesPerSecond = updateSpeed(speedTracker, items.sumOf { it.bytes })
         )
+        val suspiciousItems = progress.items.filter { it.totalBytes > 100L * 1024L * 1024L }
+        if (suspiciousItems.isNotEmpty()) {
+            Logger.log(
+                this,
+                "progress",
+                "аномальный total instance=$instanceId destination=$destination " +
+                    suspiciousItems.joinToString { "${it.name}=${it.totalBytes}" }
+            )
+        }
         CopyProgressBus.publish(progress)
         val manager = getSystemService(NotificationManager::class.java)
         manager?.notify(FOREGROUND_NOTIF_ID, buildProgressNotification(progress))

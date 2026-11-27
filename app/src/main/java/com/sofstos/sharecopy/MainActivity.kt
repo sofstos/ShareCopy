@@ -137,7 +137,9 @@ class MainActivity : AppCompatActivity() {
         val initialOverview = CopyProgressBus.current()
         val text = TextView(this).apply {
             setPadding(32, 8, 32, 16)
-            setTextColor(getColor(R.color.text_primary))
+            // AlertDialog использует светлую поверхность. Цвет text_primary приложения
+            // белый (#FFFFFF), поэтому раньше содержимое было белым на белом фоне.
+            setTextColor(getColor(android.R.color.black))
             textSize = 14f
             // На некоторых прошивках пустой child ScrollView получает высоту 0
             // во время первого измерения AlertDialog. Формируем содержимое заранее
