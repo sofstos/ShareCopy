@@ -18,6 +18,7 @@ class ShareCopyApp : Application() {
             if (!configDir.exists()) configDir.mkdirs()
             val configFile = File(configDir, "rclone.conf")
             Os.setenv("RCLONE_CONFIG", configFile.absolutePath, true)
+            Logger.log(this, "rclone", "RCLONE_CONFIG=${configFile.absolutePath} exists=${configFile.exists()} size=${configFile.length()}")
         } catch (e: Exception) {
             // Не критично для запуска приложения — просто настройки удалённых папок (rclone)
             // не будут сохраняться между запусками, если это не сработало.

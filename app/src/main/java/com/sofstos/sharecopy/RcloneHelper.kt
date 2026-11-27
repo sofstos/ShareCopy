@@ -111,6 +111,18 @@ object RcloneHelper {
     fun fsSpec(remoteName: String, path: String): String = "$remoteName:$path"
 
     private val createdRemotes = mutableMapOf<String, String>() // name -> fingerprint
+    private const val REMOTE_PREFS = "rclone_remote_state"
+
+    private fun remoteReadyFingerprint(context: Context, name: String): String? =
+        context.getSharedPreferences(REMOTE_PREFS, Context.MODE_PRIVATE)
+            .getString(name, null)
+
+    private fun markRemoteReady(context: Context, name: String, fingerprint: String) {
+        context.getSharedPreferences(REMOTE_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(name, fingerprint)
+            .apply()
+    }
 
     private fun paramsFingerprint(type: String, params: Map<String, String>): String =
         type + "|" + params.entries.sortedBy { it.key }.joinToString(";") { "${it.key}=${it.value}" }
@@ -151,6 +163,8 @@ object RcloneHelper {
         val result = call(context, "config/create", body)
         if (result.success) {
             synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
+            markRemoteReady(context, name, fingerprint)
+            Logger.log(context, "rclone", "remote '$name' сохранён и помечен готовым для повторного использования")
         }
         return result
     }
@@ -165,6 +179,17 @@ object RcloneHelper {
             if (createdRemotes[name] == fingerprint) return RpcResult(true, null, "OK (переиспользован)")
         }
 
+        // config/listremotes на Android иногда возвращает пустой список даже при
+        // наличии постоянного rclone.conf. Маркер создаётся только после успешного
+        // config/create и позволяет не запускать медленный config/create перед каждым
+        // копированием. Если конфиг действительно потерян, первая операция сама
+        // вернёт missing remote, после чего вызывающий код пересоздаст его.
+        if (remoteReadyFingerprint(context, name) == fingerprint) {
+            synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
+            Logger.log(context, "rclone", "remote '$name' переиспользован по постоянному маркеру")
+            return RpcResult(true, null, "OK (переиспользован из маркера)")
+        }
+
         val listed = call(context, "config/listremotes", log = false)
         val remotes = listed.json?.optJSONArray("remotes")
         if (listed.success && remotes != null) {
@@ -173,6 +198,7 @@ object RcloneHelper {
                 // принимает имя без завершающего двоеточия.
                 if (remotes.optString(i).trimEnd(':') == name.trimEnd(':')) {
                     synchronized(createdRemotes) { createdRemotes[name] = fingerprint }
+                    markRemoteReady(context, name, fingerprint)
                     Logger.log(context, "rclone", "remote '$name' восстановлен из постоянного конфига")
                     return RpcResult(true, null, "OK (из конфига)")
                 }

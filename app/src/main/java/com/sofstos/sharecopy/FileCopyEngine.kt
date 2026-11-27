@@ -241,9 +241,17 @@ object FileCopyEngine {
                 onFileProgress(index, file.name, CopyItemState.COPYING, bytes.coerceIn(0L, totalBytes), totalBytes, null)
             }
             if (!result.success && RcloneHelper.isMissingRemoteError(result.message)) {
-                RcloneHelper.ensureRemote(context, remoteName, type, params)
+                val ensured = RcloneHelper.ensureRemote(context, remoteName, type, params)
                 result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, _ ->
                     onFileProgress(index, file.name, CopyItemState.COPYING, bytes.coerceIn(0L, totalBytes), totalBytes, null)
+                }
+                // Если постоянный маркер остался, а rclone.conf реально потерян,
+                // marker-only путь не должен оставлять повторную ошибку без лечения.
+                if (!result.success && RcloneHelper.isMissingRemoteError(result.message) && ensured.success) {
+                    RcloneHelper.createOrReplaceRemote(context, remoteName, type, params, force = true)
+                    result = RcloneHelper.copyLocalFile(context, dir, file.name, dstFsSpec) { bytes, _ ->
+                        onFileProgress(index, file.name, CopyItemState.COPYING, bytes.coerceIn(0L, totalBytes), totalBytes, null)
+                    }
                 }
             }
             if (!result.success) {
