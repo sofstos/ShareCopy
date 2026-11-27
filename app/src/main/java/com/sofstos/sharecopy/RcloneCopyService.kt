@@ -129,7 +129,16 @@ class RcloneCopyService : Service() {
 
         val stagingDir = File(stagingDirPath)
         val files = fileNames.map { File(stagingDir, it) }.filter { it.exists() }
-        val progressItems = files.map { CopyItemProgress(it.name) }.toMutableList()
+        // Размер известен локально ещё до запуска rclone. Заполняем его сразу,
+        // чтобы UI никогда не зависел от глобального или запаздывающего stats.
+        val progressItems = files.map {
+            CopyItemProgress(it.name, totalBytes = it.length())
+        }.toMutableList()
+        Logger.log(
+            this,
+            "progress",
+            "files instance=$instanceId " + files.joinToString { "${it.name}=${it.length()}" }
+        )
         publishProgress(instanceId, speedTracker, opWord, destName, progressItems, -1, "Подготовка сетевого копирования")
         val result = FileCopyEngine.uploadStagedFiles(applicationContext, files, dest, subfolder) { index, name, state, bytes, totalBytes, error ->
             if (index in progressItems.indices) {
