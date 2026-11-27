@@ -143,9 +143,9 @@ class MainActivity : AppCompatActivity() {
             // во время первого измерения AlertDialog. Формируем содержимое заранее
             // и задаём минимальную высоту, чтобы последующий setText был виден.
             minHeight = (120 * resources.displayMetrics.density).toInt()
-            layoutParams = ScrollView.LayoutParams(
-                ScrollView.LayoutParams.MATCH_PARENT,
-                ScrollView.LayoutParams.WRAP_CONTENT
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.WRAP_CONTENT
             )
         }
         renderCopyDetails(initialOverview, text)
